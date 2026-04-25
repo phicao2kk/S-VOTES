@@ -36,6 +36,7 @@ img[alt="S-VOTES Logo"]:hover {
             border-left: 3px solid rgba(255, 255, 255, 0.6);
             border-bottom: 3px solid rgba(255, 255, 255, 0.6);
             /* Tuyệt đối không để display: flex ở đây */
+            overflow: visible !important; /* Cho phép số và tên hiển thị ra ngoài khung */
         }
 
         /* Mũi tên cho trục Oy */
@@ -73,6 +74,7 @@ img[alt="S-VOTES Logo"]:hover {
             justify-content: flex-end;
             /* Hiệu ứng di chuyển ngang mượt mà */
             transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 10;
         }
 
         /* Thanh màu của cột */
@@ -976,36 +978,37 @@ img[alt="S-VOTES Logo"]:hover {
 
 // Hàm tải dữ liệu của một Poll cụ thể vào bảng báo cáo và QR
 async function loadPoll(id) {
-    if(!id) return; // Bảo vệ nếu id rỗng
+    if(!id) return;
     currentId = id;
     localStorage.setItem('s_votes_active_id', id);
 
-    // Lấy dữ liệu từ Firebase
     const snap = await rdb.ref('s_votes/polls/' + id).once('value');
     const data = snap.val();
     if(!data) return;
 
-    // Cập nhật tiêu đề và biểu đồ báo cáo
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
-    // HIỂN THỊ KHUNG QR TRƯỚC (Để tạo không gian cho ảnh)
+    // 1. HIỆN KHUNG TRƯỚC
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
 
-    // Cập nhật mã QR tương ứng với ID này
+    // 2. LOAD ẢNH VÀO BỘ NHỚ TRƯỚC KHI ĐẨY RA GIAO DIỆN
     const url = window.location.origin + window.location.pathname + "?room=" + id;
-    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
     
-    // Thêm style display:block để ép ảnh hiện ra ngay lập tức khi tải xong
-    document.getElementById('qr-code').innerHTML = 
-        `<img src="${lastQR}" crossOrigin="anonymous" class="w-56 h-56 object-contain" style="display: block; margin: 0 auto;">`;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = qrImageUrl;
+    img.className = "w-56 h-56 object-contain";
+    img.onload = () => {
+        const container = document.getElementById('qr-code');
+        container.innerHTML = ""; // Xóa trắng cũ
+        container.appendChild(img); // Đưa ảnh đã load xong vào
+    };
 
-    // Bắt đầu lắng nghe kết quả real-time cho ID này
     listenResults(id);
-    
-    // Cập nhật giao diện danh sách (để biết đang xem cái nào)
     refreshPollList();
 }
 
@@ -1107,13 +1110,12 @@ function renderBarChart() {
     if (!container.querySelector('.chart-frame')) {
         container.innerHTML = `
             <div class="chart-frame">
-                <div class="axis-label-y text-indigo-400 font-black italic">SỐ PHIẾU ▲</div>
-                <div class="axis-label-x text-indigo-400 font-black italic">▶ PHƯƠNG ÁN</div>
+                <div class="axis-label-y" style="color:#6366f1; font-weight:bold; position:absolute; top:-30px;">SỐ PHIẾU ▲</div>
+                <div class="axis-label-x" style="color:#6366f1; font-weight:bold; position:absolute; bottom:-50px; right:0;">▶ PHƯƠNG ÁN</div>
             </div>`;
     }
     const frame = container.querySelector('.chart-frame');
-    const frameWidth = frame.clientWidth;
-    const step = frameWidth / (chartData.length + 1); 
+    const step = frame.clientWidth / (chartData.length + 1); 
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
     chartData.forEach((item, index) => {
@@ -1123,44 +1125,30 @@ function renderBarChart() {
             colEl = document.createElement('div');
             colEl.id = item.id;
             colEl.className = 'column-item';
+            // Ép style cứng cho cột khi vừa tạo
             colEl.innerHTML = `
-                <div class="column-bar" style="height: 0%; min-height: 2px;">
-                    <span class="column-votes">0</span>
+                <div class="column-bar" style="height: 0px; background: linear-gradient(to top, #3b82f6, #22d3ee); width: 45px; border-radius: 8px 8px 0 0;">
+                    <span class="column-votes" style="position:absolute; top:-25px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900;">0</span>
                 </div>
                 <span class="column-name">${item.name}</span>
             `;
             frame.appendChild(colEl);
-            
-            // --- BÍ QUYẾT Ở ĐÂY: ÉP TRÌNH DUYỆT NHẬN DIỆN CỘT 0% ---
-            colEl.offsetHeight; 
         }
 
         const xPos = (index + 1) * step - 30;
-        const hPercent = (item.votes / maxVotes) * 85;
+        const hPercent = (item.votes / maxVotes) * 80; // Để 80% cho an toàn
 
-        // Cập nhật vị trí và chiều cao
-        colEl.style.transform = `translateX(${xPos}px)`;
-        const bar = colEl.querySelector('.column-bar');
-        
-        // Dùng setTimeout cực ngắn để đảm bảo hiệu ứng chạy
-        setTimeout(() => {
-            bar.style.height = `${hPercent}%`;
-            colEl.querySelector('.column-votes').innerText = item.votes;
-        }, 10);
-        
-        // Xử lý Lọc dữ liệu
-        if (item.name.toLowerCase().includes(filterText)) {
-            colEl.style.opacity = "1";
-            colEl.style.visibility = "visible";
-        } else {
-            colEl.style.opacity = "0";
-            colEl.style.visibility = "hidden";
-        }
-    });
+        // ÉP VẼ: Dùng requestAnimationFrame kép để chắc chắn trình duyệt nhận style
+        requestAnimationFrame(() => {
+            colEl.style.transform = `translateX(${xPos}px)`;
+            const bar = colEl.querySelector('.column-bar');
+            requestAnimationFrame(() => {
+                bar.style.height = hPercent + "%";
+                colEl.querySelector('.column-votes').innerText = item.votes;
+            });
+        });
 
-    const currentIds = chartData.map(d => d.id);
-    frame.querySelectorAll('.column-item').forEach(el => {
-        if (!currentIds.includes(el.id)) el.remove();
+        colEl.style.display = item.name.toLowerCase().includes(filterText) ? "flex" : "none";
     });
 }
 
