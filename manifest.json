@@ -1,0 +1,16 @@
+{
+  "name": "S-VOTES Pro System",
+  "short_name": "S-VOTES",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "https://i.ibb.co/wFxKg2yN/S-VOTES.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
