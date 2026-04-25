@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>S-VOTES Pro • Digital Polling System</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+
+/* Hiệu ứng hào quang cho Logo */
+img[alt="S-VOTES Logo"] {
+    filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.3));
+    transition: all 0.5s ease;
+}
+
+img[alt="S-VOTES Logo"]:hover {
+    filter: drop-shadow(0 0 15px rgba(34, 211, 238, 0.6));
+}
+
+        /* Khung chứa biểu đồ có trục tọa độ */
+        .chart-frame {
+            position: relative;
+            height: 400px; /* Giảm từ 500px xuống 400px */
+            width: 90%;
+            margin: 30px auto; /* Giảm margin từ 40px xuống 30px */
+            /* Vẽ trục tọa độ Ox và Oy */
+            border-left: 3px solid rgba(255, 255, 255, 0.8);
+            border-bottom: 3px solid rgba(255, 255, 255, 0.8);
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-around;
+            padding: 0 20px;
+        }
+
+        /* Mũi tên cho trục Oy */
+        .chart-frame::before {
+            content: "▲";
+            position: absolute;
+            top: -15px;
+            left: -9px;
+            color: white;
+            font-size: 14px;
+        }
+
+        /* Mũi tên cho trục Ox */
+        .chart-frame::after {
+            content: "▶";
+            position: absolute;
+            bottom: -10px;
+            right: -10px;
+            color: white;
+            font-size: 14px;
+        }
+
+        /* Nhãn tên trục */
+        .axis-label-y { position: absolute; top: -40px; left: -50px; font-size: 12px; font-weight: bold; color: #6366f1; font-style: italic; }
+        .axis-label-x { position: absolute; bottom: -40px; right: -40px; font-size: 12px; font-weight: bold; color: #6366f1; font-style: italic; }
+
+        /* Từng cột đơn lẻ */
+        .column-item {
+            position: relative;
+            flex: 1;
+            max-width: 80px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            transition: all 0.5s ease;
+        }
+
+        /* Thanh màu của cột - màu xanh chuẩn như hình */
+        .column-bar {
+            width: 100%;
+            background: #4a90e2; /* Màu xanh biểu đồ chuẩn */
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: height 1s cubic-bezier(0.17, 0.67, 0.83, 0.67);
+            position: relative;
+        }
+
+        /* Số liệu trên đỉnh cột */
+        .column-votes {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 14px;
+            font-weight: 800;
+            color: #22d3ee;
+            white-space: nowrap;
+        }
+
+        /* Tên lựa chọn dưới chân cột */
+        .column-name {
+            position: absolute;
+            bottom: -35px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            text-align: center;
+            width: 120%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        :root { --primary: #6366f1; --accent: #22d3ee; --bg: #030712; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: #f8fafc; overflow-x: hidden; min-height: 100vh; }
+        .mesh-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; background-image: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(34, 211, 238, 0.1) 0px, transparent 50%); filter: blur(100px); }
+        
+        /* Glassmorphism gốc của S-CHECK */
+        .glass { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        
+        /* Khung bọc ngoài cùng (màu tối, bo góc) */
+        #qr-section {
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 40px;
+            padding: 30px;
+            /* KHÔNG ĐỂ display: flex ở đây để class hidden của Tailwind có tác dụng */
+        }
+
+        /* Thẻ trắng chứa mã QR (Giống hệt ảnh bạn gửi) */
+        .qr-card-white {
+            background: white;
+            width: 100%;
+            max-width: 300px;
+            padding: 35px 25px;
+            border-radius: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        }
+
+        /* Hiệu ứng laser quét */
+        .laser-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 40px; /* Tăng độ cao để quầng sáng rộng hơn */
+            /* Tạo dải sáng mờ dần từ tâm ra 2 biên */
+            background: linear-gradient(to bottom, 
+                transparent, 
+                rgba(99, 102, 241, 0.2), 
+                rgba(34, 211, 238, 0.8), 
+                rgba(99, 102, 241, 0.2), 
+                transparent
+            );
+                /* Tạo độ nhòe và bóng sáng */
+                box-shadow: 0 0 25px 5px rgba(34, 211, 238, 0.4);
+                filter: blur(4px); /* Đây là bí quyết để nó "mờ mờ" */
+                z-index: 10;
+                opacity: 0;
+                animation: scan-laser 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            }
+
+            @keyframes scan-laser {
+                0% { top: -10%; opacity: 0; }
+                15% { opacity: 1; }
+                85% { opacity: 1; }
+                100% { top: 100%; opacity: 0; }
+            }
+
+        /* Nút tải mã QR kiểu mờ (như trong ảnh) */
+        .btn-download-qr {
+            width: 100%;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            color: white;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            transition: all 0.3s;
+        }
+
+        .btn-download-qr:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .qr-card-white {
+            background: white;
+            width: 290px; /* Tăng chiều rộng một chút */
+            padding: 40px 25px 35px 25px; /* Căn chỉnh khoảng cách chuẩn */
+            border-radius: 45px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+        }
+
+        .qr-title-main {
+            color: #0f172a;
+            font-size: 26px; /* Kích thước chữ lớn */
+            font-weight: 900; /* Cực đậm */
+            font-style: italic; /* Nghiêng */
+            text-transform: uppercase;
+            letter-spacing: -1.5px; /* Khoảng cách chữ khít lại như ảnh */
+            line-height: 1;
+            margin-top: 15px;
+        }
+
+        .qr-subtitle-sub {
+            color: #94a3b8;
+            font-size: 8px; /* Chữ siêu nhỏ */
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 4px; /* Khoảng cách chữ giãn rộng ra chuẩn S-CHECK */
+            margin-top: 8px;
+        }
+
+        .laser-line {
+            position: absolute;
+            left: 0; width: 100%; height: 3px;
+            background: linear-gradient(to right, transparent, #6366f1, #22d3ee, #6366f1, transparent);
+            animation: scan-laser 3s linear infinite;
+        }
+
+        @keyframes scan-laser {
+            0% { top: 0%; opacity: 0; }
+            50% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        /* Radar Pro gốc của S-CHECK */
+        .radar-container { width: 350px; height: 350px; position: relative; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+        .radar-circle { position: absolute; inset: 0; border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 50%; }
+        .radar-pulse { position: absolute; inset: 0; border: 2px solid rgba(99, 102, 241, 0.4); border-radius: 50%; animation: radar-pulse 2s infinite cubic-bezier(0.21, 0.53, 0.56, 0.8); }
+        @keyframes radar-pulse { 0% { transform: scale(0.8); opacity: 0; } 50% { opacity: 0.4; } 100% { transform: scale(2.2); opacity: 0; } }
+        .radar-beam { position: absolute; inset: -1px; border-radius: 50%; background: conic-gradient(from 0deg, transparent 80%, rgba(99, 102, 241, 0.4) 100%); animation: radar-beam 4s linear infinite; }
+        @keyframes radar-beam { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Zoom Overlay */
+        #qr-zoom-overlay { position: fixed; inset: 0; z-index: 10001; background: #000; display: none; align-items: center; justify-content: center; cursor: zoom-out; }
+        .qr-lightbox { background: white; padding: 2.5rem; border-radius: 40px; text-align: center; }
+
+        /* --- HIỆU ỨNG INPUT MỚI --- */
+            input {
+                background: rgba(255, 255, 255, 0.03) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                color: white !important;
+                outline: none !important;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            }
+            /* Chỉ sáng ô đang được click */
+            input:focus {
+                background: rgba(255, 255, 255, 0.08) !important;
+                border-color: var(--primary) !important;
+                box-shadow: 0 0 20px rgba(99, 102, 241, 0.2) !important;
+                transform: translateY(-1px);
+            }
+
+            /* --- HIỆU ỨNG BUTTON MỚI --- */
+            .btn-main {
+                background: var(--primary);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                font-weight: 800;
+                letter-spacing: 1px;
+            }
+            .btn-main:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3);
+                filter: brightness(1.1);
+            }
+            .btn-main:active {
+                transform: translateY(-1px) scale(0.96);
+            }
+
+            .btn-secondary {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                transition: all 0.2s;
+            }
+            .btn-secondary:hover {
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
+                transform: scale(1.02);
+            }
+
+        .btn-glow { background: linear-gradient(135deg, var(--primary), #4f46e5); transition: all 0.3s ease; box-shadow: 0 0 20px rgba(99, 102, 241, 0.3); }
+        .btn-glow:active { transform: scale(0.95); }
+   
+   /* Animation cho thông báo */
+    @keyframes slide-down {
+        from { transform: translateY(-20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+
+    .s-toast {
+        background: #0f172a;
+        border: 1px solid rgba(255,255,255,0.1);
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-size: 10px;
+        letter-spacing: 2px;
+        border-left: 4px solid var(--primary);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        /* Thêm hiệu ứng phát sáng nhẹ */
+        position: relative;
+    }
+    .s-toast::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        box-shadow: 0 0 15px rgba(99, 102, 241, 0.2);
+        border-radius: 12px;
+        pointer-events: none;
+    }
+
+    .s-toast i { font-size: 16px; }
+    .s-toast.success { border-left: 4px solid #10b981; }
+    .s-toast.error { border-left: 4px solid #ef4444; }
+
+        /* --- NÚT RESET BIẾN THỂ (DANGER MODE) --- */
+        .btn-reset-mode {
+            background: rgba(239, 68, 68, 0.05) !important;
+            border: 1px solid rgba(239, 68, 68, 0.3) !important;
+            color: #ef4444 !important;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Hiệu ứng quét đỏ khi Hover */
+        .btn-reset-mode:hover {
+            background: #ef4444 !important;
+            color: white !important;
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+            transform: translateY(-2px);
+        }
+
+        /* --- MODAL XÁC NHẬN "PREMIUM" --- */
+        #s-confirm-modal {
+            backdrop-filter: blur(15px) saturate(180%);
+            background: rgba(3, 7, 18, 0.85);
+        }
+
+        /* Khung Modal Siêu Hiện Đại */
+        .confirm-card {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(30px) saturate(150%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.8), 
+                        inset 0 0 20px rgba(255, 255, 255, 0.02);
+            border-radius: 40px;
+            padding: 45px;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+            transform: scale(0.9);
+            opacity: 0;
+            animation: modern-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes modern-pop {
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        /* Nút bấm kiểu mới - "Lì" và Sang */
+        .btn-modern-primary {
+            background: #ffffff;
+            color: #000000;
+            padding: 16px 32px;
+            border-radius: 20px;
+            font-weight: 800;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+            transition: all 0.3s;
+        }
+        .btn-modern-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-modern-ghost {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.5);
+            padding: 16px 32px;
+            border-radius: 20px;
+            font-weight: 800;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+        }
+        .btn-modern-ghost:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        @keyframes confirm-pop {
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        /* Icon cảnh báo rung lắc */
+        .warning-icon {
+            font-size: 40px;
+            color: #ef4444;
+            animation: icon-shake 2s infinite;
+        }
+
+        @keyframes icon-shake {
+            0%, 100% { transform: rotate(0); }
+            10%, 30%, 50% { transform: rotate(-10deg); }
+            20%, 40%, 60% { transform: rotate(10deg); }
+        }
+
+/* Giao diện Bảng dữ liệu chuẩn Excel */
+.data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-top: 20px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+.data-table th {
+    background: #1e40af; /* Màu xanh đậm giống hình */
+    color: white;
+    padding: 15px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.data-table td {
+    padding: 12px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.05);
+    font-size: 13px;
+    color: #cbd5e1;
+}
+.data-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.data-table tr:hover { background: rgba(99, 102, 241, 0.1); }
+
+/* Ô lọc dữ liệu nhanh */
+.filter-box {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px 15px;
+    color: white;
+    font-size: 12px;
+    width: 250px;
+    transition: all 0.3s;
+}
+.filter-box:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 15px rgba(99,102,241,0.2);
+}
+
+/* Giới hạn hiện đúng 3 lựa chọn, từ cái thứ 4 sẽ hiện thanh cuộn */
+#options-list {
+    max-height: 255px; /* Chiều cao vừa đủ cho 3 hàng (mỗi hàng ~85px bao gồm cả khoảng cách mb-3) */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    margin-bottom: 10px;
+    scroll-behavior: smooth;
+    transition: all 0.3s ease;
+}
+
+/* Tùy chỉnh thanh cuộn siêu mảnh cho hiện đại */
+#options-list::-webkit-scrollbar {
+    width: 4px;
+}
+#options-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+#options-list::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.3);
+    border-radius: 10px;
+}
+
+/* Danh sách các poll đã tạo */
+.poll-card {
+    padding: 12px 16px !important; /* Thay vì p-4 (16px) */
+}
+
+.poll-card:hover { background: rgba(99, 102, 241, 0.1); border-color: var(--primary); }
+.poll-card.active { background: rgba(99, 102, 241, 0.2); border-color: var(--primary); box-shadow: 0 0 15px rgba(99, 102, 241, 0.2); }
+
+/* Đảm bảo danh sách không bị cắt viền khi cuộn */
+#active-polls-list {
+    padding: 2px; /* Thêm padding nhỏ để không mất viền */
+    scroll-behavior: smooth;
+}
+
+/* Tùy chỉnh thanh cuộn cho danh sách poll (giống thanh bạn khoanh tròn nhưng đẹp hơn) */
+#active-polls-list::-webkit-scrollbar {
+    width: 5px;
+}
+#active-polls-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 10px;
+}
+#active-polls-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+    </style>
+</head>
+<body>
+    <div class="mesh-bg"></div>
+
+    <!-- QR ZOOM OVERLAY -->
+    <div id="qr-zoom-overlay" onclick="this.style.display='none'">
+        <div class="qr-lightbox" onclick="event.stopPropagation()">
+            <div id="qr-zoom-content" class="mb-6 flex justify-center"></div>
+            <h3 class="text-black text-3xl font-black uppercase italic tracking-tighter">QUÉT MÃ BÌNH CHỌN</h3>
+            <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[4px] mt-2">S-VOTES PRO SYSTEM</p>
+        </div>
+    </div>
+
+    <!-- NAV -->
+    <nav class="fixed top-0 left-0 right-0 h-16 flex items-center justify-between px-6 lg:px-12 border-b border-white/5 backdrop-blur-2xl bg-[#030712]/90 z-[100]">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-2xl overflow-hidden shadow-lg shadow-indigo-500/30 border border-white/10">
+                <img src="https://i.ibb.co/wFxKg2yN/S-VOTES.png" 
+                    alt="S-VOTES Logo" 
+                    class="w-full h-full object-contain drop-shadow-[0_0_12px_rgba(99,102,241,0.6)] hover:scale-110 transition-transform duration-300 cursor-pointer">
+            </div>
+            <div>
+                <span class="text-2xl font-black tracking-tighter uppercase italic">S-VOTES</span>
+                <span class="block text-[8px] font-black tracking-[3px] text-indigo-400 -mt-1 uppercase">Pro System</span>
+            </div>
+        </div>
+        <div id="live-indicator" class="hidden flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 px-5 py-2 rounded-full">
+            <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span class="text-[10px] font-black text-emerald-400 uppercase tracking-widest">HỆ THỐNG LIVE</span>
+        </div>
+    </nav>
+
+    <main class="pt-24 pb-10 px-4 lg:px-10 max-w-[1700px] mx-auto">
+        
+        <!-- ADMIN DASHBOARD -->
+        <div id="view-admin" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- CỘT SETUP (4) -->
+            <div class="lg:col-span-4 glass p-6 rounded-[40px] space-y-6">
+                <div class="glass p-6 lg:p-7 rounded-[40px]">
+                    <h3 class="text-xs font-black text-indigo-400 uppercase tracking-[4px] mb-4 border-l-4 border-indigo-500 pl-4">THIẾT LẬP BÌNH CHỌN</h3>
+
+                    <div class="glass p-5 rounded-[30px] mt-0 mb-6 border border-white/5 bg-white/[0.02]">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-[9px] font-black text-indigo-400/70 uppercase tracking-[3px]">DANH SÁCH ĐANG CHẠY</h3>
+                            <button onclick="resetSystemHistory()" class="text-[9px] font-black text-red-500/80 hover:text-red-500 uppercase tracking-widest transition-all">
+                                XÓA TẤT CẢ
+                            </button>
+                        </div>
+                        <div id="active-polls-list" class="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                            <p class="text-[10px] text-slate-500 italic">Chưa có bình chọn nào...</p>
+                        </div>
+                    </div>
+
+                    
+                    <div class="space-y-5">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest ml-2">Tên chủ đề</label>
+                            <input type="text" id="vote-title" placeholder="Ví dụ: Bầu ban cán sự lớp..." class="w-full p-5 rounded-2xl font-bold">
+                        </div>
+
+                        <div class="space-y-3">
+                            <label class="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-2">Các phương án bầu chọn</label>
+                            <div id="options-list" class="space-y-3">
+                                <!-- JS -->
+                            </div>
+                                <button id="btn-add" onclick="addOptionField()" class="btn-secondary w-full py-4 rounded-2xl text-[10px] font-black text-slate-400 uppercase">
+                                    + THÊM LỰA CHỌN
+                                </button>               
+                            </div>
+
+                        <button id="btn-activate" onclick="activatePoll()" class="btn-main w-full py-5 rounded-[24px] text-white uppercase text-xs">
+                            KÍCH HOẠT HỆ THỐNG
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KHUNG QR (Ẩn mặc định bằng class 'hidden') -->
+                <div id="qr-section" class="hidden mt-8 p-8 bg-white/5 border border-white/10 rounded-[40px] flex flex-col items-center gap-6">
+                    <div id="qr-card-capture" class="qr-card-white cursor-zoom-in" onclick="zoomQR()">
+                        <div class="laser-line" data-html2canvas-ignore></div> <!-- Thêm cái này vào đây -->
+                        <div id="qr-code"></div> 
+                        <div class="text-center mt-4">
+                            <h4 class="text-[#0f172a] font-black italic uppercase tracking-tighter text-2xl leading-none">QUÉT MÃ BÌNH CHỌN</h4>
+                            <p class="text-slate-400 font-bold uppercase tracking-[3px] text-[9px] mt-2">S-VOTES PRO SYSTEM</p>
+                        </div>
+                    </div>
+                    
+                    <button onclick="downloadQR()" class="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all">
+                        TẢI MÃ QR (PNG)
+                    </button>
+                </div>
+            </div>
+
+            <!-- CỘT BÁO CÁO (8) -->
+            <div class="lg:col-span-8 glass p-8 lg:p-12 rounded-[48px] min-h-[750px] flex flex-col relative overflow-hidden">
+                <div class="flex justify-between items-center mb-8">
+                    <div class="space-y-1">
+                        <h2 id="display-title" class="text-3xl font-black italic uppercase tracking-tighter">BÁO CÁO CHI TIẾT</h2>
+                        <p class="text-[10px] text-slate-500 font-black uppercase tracking-[4px]">Hệ thống bình chọn tự động</p>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <!-- Ô lọc dữ liệu nhanh -->
+                        <input type="text" id="table-filter" oninput="filterTable()" placeholder="🔍 Lọc phương án..." class="filter-box">
+                        
+                        <button onclick="exportExcel()" class="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase hover:scale-105 active:scale-95 transition-all shadow-lg shadow-emerald-500/20">
+                            <i class="fa-solid fa-file-excel"></i> XUẤT EXCEL (PRO)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Nơi hiển thị bảng xem trước (thay thế vote-bars cũ hoặc hiện song song) -->
+                <div id="table-preview-container" class="hidden">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>STT</th>
+                                <th>Phương án bầu chọn</th>
+                                <th>Số lượt bầu</th>
+                                <th>Tỷ lệ %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Dữ liệu JS tự đổ vào đây -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- KHU VỰC CHỨA RADAR HOẶC KẾT QUẢ -->
+                <div id="report-content" class="flex-1 flex flex-col justify-center">
+                    <!-- Radar trung tâm -->
+                    <div id="empty-state" class="text-center relative">
+                        <div class="radar-container">
+                            <div class="radar-circle"></div>
+                            <div class="radar-circle" style="inset: 20%"></div>
+                            <div class="radar-circle" style="inset: 40%"></div>
+                            <div class="radar-circle" style="inset: 60%"></div>
+                            <div class="radar-pulse"></div>
+                            <div class="radar-beam"></div>
+                            <div class="absolute w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_20px_rgba(99,102,241,1)]"></div>
+                        </div>
+                        <p class="mt-12 text-[10px] font-black uppercase tracking-[10px] text-indigo-400/40 animate-pulse">ĐANG QUÉT PHIẾU BẦU...</p>
+                    </div>
+
+                    <!-- Danh sách Bars bầu chọn -->
+                    <div id="vote-bars" class="w-full max-w-5xl mx-auto hidden transition-all duration-500"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- USER VIEW -->
+        <div id="view-user" class="hidden max-w-2xl mx-auto space-y-12 py-10">
+            <div class="text-center space-y-4">
+                <h2 id="u-title" class="text-4xl lg:text-6xl font-black italic uppercase tracking-tighter text-white"></h2>
+                <div class="inline-block px-6 py-3 bg-white/5 border border-white/10 rounded-full">
+                    <p class="text-indigo-400 text-[10px] font-black uppercase tracking-[5px]">CHỌN 1 PHƯƠNG ÁN DUY NHẤT</p>
+                </div>
+            </div>
+            <div id="u-options" class="grid gap-6"></div>
+        </div>
+    </main>
+
+    <div id="success-overlay" class="fixed inset-0 z-[10005] hidden flex flex-col items-center justify-center">
+        <div class="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center mb-8 shadow-2xl">
+            <i class="fa-solid fa-check text-4xl text-white"></i>
+        </div>
+        <h2 class="text-5xl font-black italic text-white uppercase tracking-tighter">BÌNH CHỌN XONG</h2>
+        <p class="text-slate-400 font-bold uppercase tracking-[4px] mt-4">HỆ THỐNG ĐÃ GHI NHẬN</p>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDWqkvbs8Ce5bhH3FYWgdRKQ0t3KXKQY3Q",
+            authDomain: "fir-s-votes-pro.firebaseapp.com",
+            databaseURL: "https://fir-s-votes-pro-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "fir-s-votes-pro",
+            storageBucket: "fir-s-votes-pro.firebasestorage.app",
+            messagingSenderId: "581437404210",
+            appId: "1:581437404210:web:d1486f45a749a07d24f82b",
+        };
+        firebase.initializeApp(firebaseConfig);
+        const rdb = firebase.database();
+
+        let currentId = null;
+        let lastQR = "";
+
+        window.onload = async () => {
+            const params = new URLSearchParams(window.location.search);
+            const room = params.get('room');
+
+            if (room) { 
+                renderUserPoll(room); 
+            } else {
+                const savedId = localStorage.getItem('s_votes_active_id');
+                if (savedId) {
+                    // Hiện Modal khôi phục to
+                    document.getElementById('restore-modal').style.display = 'flex';
+                    currentId = savedId; // Tạm giữ ID
+                } else {
+                    // Nếu không có dữ liệu cũ, hiện 2 ô mặc định
+                    addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
+                }
+            }
+        };
+
+            async function handleRestore(isRestore) {
+                document.getElementById('restore-modal').style.display = 'none';
+                
+                if (isRestore) {
+                    // --- LOGIC KHÔI PHỤC ---
+                    // 1. Lấy dữ liệu từ Firebase cho Poll đang active
+                    const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
+                    if(snap.exists()) {
+                        const data = snap.val();
+                        
+                        // Đổ lại dữ liệu vào các ô nhập liệu (Logic cũ của bạn)
+                        document.getElementById('vote-title').value = data.title;
+                        document.getElementById('options-list').innerHTML = "";
+                        data.options.forEach(opt => addOptionField(opt));
+
+                        // 2. Tải lại báo cáo, QR và khởi động lắng nghe Real-time
+                        loadPoll(currentId); 
+
+                        // 3. Khôi phục lại toàn bộ DANH SÁCH cũ bên trái
+                        refreshPollList();
+                        
+                        S_Notify.alert("Đã khôi phục toàn bộ danh sách bình chọn");
+                    }
+                } else {
+                    // --- LOGIC BẮT ĐẦU MỚI ---
+                    // Xóa sạch cả ID đang chạy và toàn bộ Danh sách lịch sử trong máy
+                    localStorage.removeItem('s_votes_active_id');
+                    localStorage.removeItem('s_votes_all_ids');
+                    
+                    // Tải lại trang để giao diện trắng tinh khôi, sẵn sàng cho sự kiện mới
+                    location.reload();
+                }
+            }
+
+
+        function addOptionField(v = "") {
+            const container = document.getElementById('options-list');
+            const div = document.createElement('div');
+            
+            // Sử dụng mb-3 để tạo khoảng cách đều giữa các ô
+            div.className = "flex items-center gap-3 mb-3 animate-in fade-in slide-in-from-left-2 duration-300"; 
+            
+            div.innerHTML = `
+                <input type="text" class="opt flex-1 p-5 rounded-2xl font-bold" value="${v}">
+                <button onclick="this.parentElement.remove()" class="btn-del text-slate-600 hover:text-red-500 px-3 transition-colors">
+                    <i class="fa-solid fa-circle-xmark"></i>
+                </button>`;
+            
+            container.appendChild(div);
+
+            // Cuộn xuống cuối cùng của danh sách phương án
+            // Dùng setTimeout để đảm bảo trình duyệt đã render xong phần tử mới trước khi tính toán scrollHeight
+            setTimeout(() => {
+                container.scrollTo({
+                    top: container.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 10);
+            
+            // Tự động focus vào ô mới thêm
+            div.querySelector('input').focus();
+        }
+
+        async function activatePoll() {
+            const titleInput = document.getElementById('vote-title');
+            const title = titleInput.value.trim();
+            const options = Array.from(document.querySelectorAll('.opt')).map(i => i.value.trim()).filter(x => x);
+            
+            // 1. Kiểm tra điều kiện nhập liệu
+            if(!title || options.length < 2) {
+                S_Notify.alert("Vui lòng nhập đủ chủ đề và phương án", "error");
+                return;
+            }
+
+            // --- LOGIC HỦY KHÓA VÀ KHÔNG THÔNG BÁO XÁC NHẬN ---
+
+            // 2. Tạo ID và dữ liệu cho bình chọn mới
+            const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+            const pollData = { title, options, ts: Date.now() };
+
+            // 3. Đẩy dữ liệu lên Firebase
+            await rdb.ref('s_votes/polls/' + pollId).set(pollData);
+
+            // 4. Cập nhật danh sách ID vào LocalStorage (Thêm vào đầu danh sách hiện tại)
+            let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
+            list.unshift(pollId); // Thêm ID mới vào đầu mảng
+            
+            localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
+            localStorage.setItem('s_votes_active_id', pollId);
+
+            // 5. Reset Form nhập liệu để sẵn sàng cho chủ đề tiếp theo
+            titleInput.value = ""; 
+            document.getElementById('options-list').innerHTML = "";
+            addOptionField("Ứng viên A"); 
+            addOptionField("Ứng viên B");
+
+            // 6. Hiển thị bình chọn vừa tạo lên Báo cáo và Danh sách quản lý
+            loadPoll(pollId); 
+            refreshPollList();
+            
+            S_Notify.alert("Kích hoạt hệ thống thành công!");
+
+            // Tự động cuộn lên đầu trang
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function resetSystemHistory() {
+            S_Notify.confirm("Hệ thống sẽ xóa sạch danh sách quản lý và dữ liệu hiện tại để bắt đầu sự kiện mới. Bạn đồng ý chứ?", () => {
+                // 1. Ngắt kết nối lắng nghe dữ liệu cũ trên Firebase (nếu đang xem)
+                if(currentId) rdb.ref('s_votes/polls/' + currentId).off();
+
+                // 2. Xóa toàn bộ bộ nhớ tạm trên máy này
+                localStorage.removeItem('s_votes_all_ids');
+                localStorage.removeItem('s_votes_active_id');
+
+                // 3. Reset các biến logic về mặc định
+                currentId = null;
+                lastPollData = null;
+
+                // 4. Làm sạch giao diện báo cáo và mã QR
+                document.getElementById('display-title').innerText = "BÁO CÁO CHI TIẾT";
+                document.getElementById('qr-section').classList.add('hidden');
+                document.getElementById('qr-section').classList.remove('flex');
+                document.getElementById('live-indicator').classList.add('hidden');
+                document.getElementById('empty-state').classList.remove('hidden');
+                document.getElementById('vote-bars').classList.add('hidden');
+
+                // 5. Cập nhật lại danh sách (bây giờ sẽ trống rỗng)
+                refreshPollList();
+
+                S_Notify.alert("Đã reset toàn bộ hệ thống. Bạn có thể bắt đầu bình chọn mới!");
+            });
+        }
+
+        function refreshPollList() {
+    const list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
+    const container = document.getElementById('active-polls-list');
+    
+    if(list.length === 0) {
+        container.innerHTML = `<p class="text-[10px] text-slate-500 italic uppercase tracking-widest mt-4">Hệ thống trống</p>`;
+        return;
+    }
+
+    container.innerHTML = "";
+    list.forEach(id => {
+        rdb.ref('s_votes/polls/' + id + '/title').once('value', snap => {
+            const title = snap.val() || "Chủ đề không tồn tại";
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex items-center gap-3 mb-4 group";
+
+            const isActive = (id === currentId);
+            
+            wrapper.innerHTML = `
+                <!-- Ô bình chọn với thanh nhấn bên trái (Accent line) -->
+                <div onclick="loadPoll('${id}')" 
+                     class="poll-card flex-1 p-4 rounded-2xl cursor-pointer transition-all duration-300 flex justify-between items-center border
+                            ${isActive ? 
+                                'bg-indigo-500/15 border-indigo-500/80 border-l-4 border-l-indigo-500 scale-[1.02] shadow-[0_10px_30px_rgba(0,0,0,0.3)]' : 
+                                'bg-white/5 border-white/10 border-l-4 border-l-transparent opacity-50 hover:opacity-100 hover:border-white/20'
+                            }">
+                    <p class="text-[11px] font-black text-white uppercase truncate tracking-tight">${title}</p>
+                    <i class="fa-solid fa-chart-line ${isActive ? 'text-emerald-400' : 'text-slate-700'} text-[12px]"></i>
+                </div>
+
+                <!-- Nút xóa có viền rõ ràng -->
+                <button onclick="deletePoll('${id}'); event.stopPropagation();" 
+                        class="w-12 h-12 flex items-center justify-center rounded-2xl border transition-all active:scale-90
+                               bg-red-500/5 border-red-500/20 text-red-500 hover:bg-red-500 hover:text-white hover:border-red-500">
+                    <i class="fa-solid fa-trash-can text-[18px]"></i>
+                </button>
+            `;
+
+            container.appendChild(wrapper);
+        });
+    });
+}
+
+
+        // Hàm tải dữ liệu của một Poll cụ thể vào bảng báo cáo và QR
+        async function loadPoll(id) {
+            currentId = id;
+            localStorage.setItem('s_votes_active_id', id);
+
+            // Lấy dữ liệu từ Firebase
+            const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+            const data = snap.val();
+            if(!data) return;
+
+            // Cập nhật tiêu đề và biểu đồ báo cáo
+            document.getElementById('display-title').innerText = data.title;
+            document.getElementById('live-indicator').classList.remove('hidden');
+
+            // Cập nhật mã QR tương ứng với ID này
+            const url = window.location.origin + window.location.pathname + "?room=" + id;
+            lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+            document.getElementById('qr-code').innerHTML = `<img src="${lastQR}" crossOrigin="anonymous" class="w-56 h-56 object-contain">`;
+            document.getElementById('qr-section').classList.remove('hidden');
+            document.getElementById('qr-section').classList.add('flex');
+
+            // Bắt đầu lắng nghe kết quả real-time cho ID này
+            listenResults(id);
+            
+            // Cập nhật giao diện danh sách (để biết đang xem cái nào)
+            refreshPollList();
+        }
+
+        function deletePoll(id) {
+            S_Notify.confirm(`Bạn có chắc chắn muốn xóa bình chọn này khỏi danh sách?`, () => {
+                // 1. Lọc bỏ ID khỏi danh sách trong LocalStorage
+                let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
+                list = list.filter(item => item !== id);
+                localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
+
+                // 2. Nếu mục bị xóa đang là mục đang xem -> Reset giao diện báo cáo
+                if (id === currentId) {
+                    rdb.ref('s_votes/polls/' + id).off(); // Ngừng lắng nghe Firebase
+                    currentId = null;
+                    localStorage.removeItem('s_votes_active_id');
+                    
+                    // Ẩn các thành phần báo cáo
+                    document.getElementById('qr-section').classList.add('hidden');
+                    document.getElementById('display-title').innerText = "BÁO CÁO CHI TIẾT";
+                    document.getElementById('live-indicator').classList.add('hidden');
+                    document.getElementById('empty-state').classList.remove('hidden');
+                    document.getElementById('vote-bars').classList.add('hidden');
+                }
+
+                // 3. Vẽ lại danh sách mới
+                refreshPollList();
+                S_Notify.alert("Đã xóa mục chọn!");
+            });
+        }
+
+        function resetPoll() {
+            if(!confirm("Bạn có chắc chắn muốn xóa bình chọn hiện tại và tạo mới không?")) return;
+
+            // 1. Ngắt kết nối Firebase cũ (để không nhảy số nữa)
+            if(currentId) rdb.ref('s_votes/polls/' + currentId).off();
+
+            // 2. Mở khóa ô nhập liệu
+            const titleInput = document.getElementById('vote-title');
+            titleInput.disabled = false;
+            titleInput.value = "";
+            
+            document.getElementById('btn-add').disabled = false;
+            document.getElementById('btn-add').style.display = 'block';
+
+            // 3. Xóa danh sách lựa chọn cũ và tạo lại 2 ô mặc định
+            document.getElementById('options-list').innerHTML = "";
+            addOptionField("Ứng viên A");
+            addOptionField("Ứng viên B");
+
+            // 4. Reset giao diện QR và Báo cáo
+            document.getElementById('qr-section').classList.add('hidden');
+            document.getElementById('qr-section').classList.remove('flex');
+            document.getElementById('display-title').innerText = "BÁO CÁO";
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('vote-bars').classList.add('hidden');
+            document.getElementById('live-indicator').classList.add('hidden');
+
+            // 5. Khôi phục nút Kích hoạt
+            const btn = document.getElementById('btn-activate');
+            btn.innerText = "KÍCH HOẠT HỆ THỐNG";
+            btn.className = "btn-glow w-full py-5 rounded-[24px] text-white font-black uppercase text-xs tracking-[4px]";
+            
+            currentId = null;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+let lastPollData = null; // Lưu dữ liệu mới nhất để lọc tại chỗ
+
+function listenResults(id) {
+    rdb.ref('s_votes/polls/' + id).on('value', snap => {
+        const data = snap.val(); 
+        if(!data) return;
+        lastPollData = data; // Cất dữ liệu vào đây
+        renderBarChart();    // Vẽ biểu đồ
+    });
+}
+
+// HÀM CHUYÊN BIỆT CHỈ ĐỂ VẼ BIỂU ĐỒ CỘT
+function renderBarChart() {
+    if (!lastPollData) return;
+
+    const filterText = document.getElementById('table-filter').value.toLowerCase();
+    const data = lastPollData;
+    
+    const votes = data.votes ? Object.values(data.votes) : [];
+    const counts = new Array(data.options.length).fill(0);
+    votes.forEach(v => counts[v]++);
+
+    // 1. Tạo mảng dữ liệu và SẮP XẾP cao nhất bên trái
+    let chartData = data.options.map((name, index) => ({
+        name: name,
+        votes: counts[index]
+    })).sort((a, b) => b.votes - a.votes);
+
+    // 2. LỌC dữ liệu theo ô nhập liệu
+    const filteredData = chartData.filter(item => 
+        item.name.toLowerCase().includes(filterText)
+    );
+
+    // 3. Tìm số phiếu cao nhất trong nhóm đã lọc để tính chiều cao
+    const maxFilteredVotes = Math.max(...filteredData.map(d => d.votes), 1); 
+
+    // 4. Đổ dữ liệu vào khung biểu đồ
+    document.getElementById('empty-state').classList.add('hidden');
+    const container = document.getElementById('vote-bars');
+    container.classList.remove('hidden');
+
+    container.innerHTML = `
+        <div class="chart-frame">
+            <div class="axis-label-y text-center text-[10px]">Số lượt<br>(Phiếu)</div>
+            <div class="axis-label-x text-[10px]">Phương án</div>
+            
+            ${filteredData.map((item, i) => {
+                // Tính % chiều cao (tối đa 90% để không đè mũi tên)
+                const heightPercent = (item.votes / maxFilteredVotes) * 90;
+                
+                return `
+                    <div class="column-item">
+                        <div class="column-bar" style="height: ${heightPercent}%">
+                            <span class="column-votes">${item.votes}</span>
+                        </div>
+                        <span class="column-name">${item.name}</span>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+// Hàm này gắn vào sự kiện oninput của ô lọc
+function filterTable() {
+    renderBarChart();
+}
+
+        async function renderUserPoll(id) {
+            document.getElementById('view-admin').classList.add('hidden');
+            document.getElementById('view-user').classList.remove('hidden');
+            const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+            const data = snap.val(); currentId = id;
+            document.getElementById('u-title').innerText = data.title;
+            document.getElementById('u-options').innerHTML = data.options.map((opt, i) => `
+                <button onclick="submitVote(${i})" class="glass p-10 rounded-[40px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
+                    <span class="text-2xl font-black uppercase italic group-hover:text-indigo-400">${opt}</span>
+                    <i class="fa-solid fa-chevron-right text-slate-800 group-hover:text-indigo-500"></i>
+                </button>`).join('');
+        }
+
+        async function submitVote(idx) {
+            if(localStorage.getItem('v_' + currentId)) {
+                S_Notify.alert("Bạn đã thực hiện bình chọn trước đó!", "error");
+                return;
+            }
+            await rdb.ref(`s_votes/polls/${currentId}/votes`).push(idx);
+            localStorage.setItem('v_' + currentId, true);
+            document.getElementById('success-overlay').style.display = 'flex';
+            confetti({ particleCount: 200, spread: 80 });
+        }
+
+        function zoomQR() { 
+            document.getElementById('qr-zoom-content').innerHTML = `<img src="${lastQR}" class="w-[75vmin] h-[75vmin] object-contain rounded-3xl">`;
+            document.getElementById('qr-zoom-overlay').style.display = 'flex';
+        }
+        async function downloadQR() {
+            const card = document.getElementById('qr-card-capture');
+            if (!card) return S_Notify.alert("Không tìm thấy khung QR!", "error");
+
+            try {
+                S_Notify.alert("Đang chuẩn bị file ảnh...");
+
+                // 1. Tìm tia laser
+                const laser = card.querySelector('.laser-line');
+                
+                // 2. Ẩn tia laser bằng display: none để html2canvas không nhìn thấy nó
+                if(laser) laser.style.display = 'none';
+
+                // 3. Chụp ảnh (Thêm một chút delay nhỏ để trình duyệt kịp ẩn laser)
+                await new Promise(resolve => setTimeout(resolve, 100)); 
+
+                const canvas = await html2canvas(card, {
+                    scale: 3, 
+                    useCORS: true, 
+                    backgroundColor: "#ffffff", // Ép nền trắng để không bị lỗi trong suốt
+                    logging: false
+                });
+
+                // 4. Hiện lại tia laser cho giao diện web sau khi chụp xong
+                if(laser) laser.style.display = 'block';
+
+                // 5. Tải file
+                const link = document.createElement('a');
+                link.download = `S-VOTES_QR_${currentId || 'PRO'}.png`;
+                link.href = canvas.toDataURL("image/png");
+                link.click();
+
+                S_Notify.alert("Tải khung QR thành công!");
+            } catch (error) {
+                console.error("Lỗi:", error);
+                S_Notify.alert("Lỗi tạo ảnh, vui lòng thử lại!", "error");
+            }
+        }
+
+        // Hàm định dạng thời gian chuẩn Việt Nam
+        function getVNDate() {
+            return new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+        }
+
+        // Hàm lọc dữ liệu trên bảng web
+        function filterTable() {
+            const val = document.getElementById('table-filter').value.toLowerCase();
+            const rows = document.querySelectorAll('#table-body tr');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(val) ? '' : 'none';
+            });
+        }
+
+        // HÀM XUẤT EXCEL CÓ ĐỊNH DẠNG CHUẨN NHƯ HÌNH
+        async function exportExcel() {
+            if(!currentId) return S_Notify.alert("Chưa có dữ liệu để xuất!", "error");
+
+            const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
+            const data = snap.val();
+            const votes = data.votes ? Object.values(data.votes) : [];
+            const counts = new Array(data.options.length).fill(0);
+            votes.forEach(v => counts[v]++);
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('BÁO CÁO S-VOTES');
+
+            // --- CẤU HÌNH KHÓA CỘT A VÀ DÒNG 1, 2, 3 (Freeze Panes) ---
+            // xSplit: 1 (Khóa 1 cột đầu - cột A)
+            // ySplit: 3 (Khóa 3 dòng đầu - dòng 1, 2 và tiêu đề bảng ở dòng 3)
+            worksheet.views = [
+                { state: 'frozen', xSplit: 1, ySplit: 3 }
+            ];
+
+            // 1. HEADER CHÍNH (Đẩy về cột A)
+            worksheet.mergeCells('A1:D1');
+            const titleCell = worksheet.getCell('A1');
+            titleCell.value = 'HỆ THỐNG BÌNH CHỌN TỰ ĐỘNG';
+            titleCell.font = { name: 'Times New Roman', size: 20, bold: true };
+            titleCell.alignment = { horizontal: 'center' };
+
+            worksheet.mergeCells('A2:D2');
+            const subTitleCell = worksheet.getCell('A2');
+            subTitleCell.value = data.title.toUpperCase();
+            subTitleCell.font = { name: 'Times New Roman', size: 14, bold: true };
+            subTitleCell.alignment = { horizontal: 'center' };
+
+            // 2. TIÊU ĐỀ BẢNG (Dòng 3, Bắt đầu từ A)
+            const headerRow = worksheet.getRow(3);
+            headerRow.values = ['STT', 'PHƯƠNG ÁN BẦU CHỌN', 'SỐ LƯỢT BẦU', 'TỶ LỆ %'];
+            
+            headerRow.eachCell((cell) => {
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003399' } }; // Màu xanh đậm
+                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.border = { 
+                    top: {style:'thin'}, left: {style:'thin'}, 
+                    bottom: {style:'thin'}, right: {style:'thin'} 
+                };
+            });
+
+            // 3. ĐỔ DỮ LIỆU VÀO BẢNG
+            data.options.forEach((opt, i) => {
+                const row = worksheet.addRow([
+                    i + 1, // Cột A
+                    opt,   // Cột B
+                    counts[i], // Cột C
+                    ((counts[i] / (votes.length || 1)) * 100).toFixed(1) + '%' // Cột D
+                ]);
+                
+                row.eachCell((cell) => {
+                    cell.alignment = { horizontal: 'center' };
+                    cell.border = { 
+                        top: {style:'thin'}, left: {style:'thin'}, 
+                        bottom: {style:'thin'}, right: {style:'thin'} 
+                    };
+                });
+            });
+
+            // 4. THIẾT LẬP BỘ LỌC TỰ ĐỘNG (Bắt đầu từ A3 đến D3)
+            worksheet.autoFilter = 'A3:D3';
+
+            // 5. THIẾT LẬP ĐỘ RỘNG CỘT
+            worksheet.getColumn(1).width = 10; // Cột A
+            worksheet.getColumn(2).width = 40; // Cột B
+            worksheet.getColumn(3).width = 20; // Cột C
+            worksheet.getColumn(4).width = 15; // Cột D
+
+            // 6. THÊM FOOTER (Ghi chú thời gian căn lề phải ngoài cùng)
+                worksheet.addRow([]); // Thêm 1 dòng trống để giãn cách
+                
+                // Lấy số dòng hiện tại để merge
+                const footerRowNum = worksheet.lastRow.number + 1;
+                
+                // Merge từ cột A đến cột D (toàn bộ chiều rộng bảng)
+                worksheet.mergeCells(`A${footerRowNum}:D${footerRowNum}`);
+                
+                const footerCell = worksheet.getCell(`A${footerRowNum}`);
+                footerCell.value = `Báo cáo được xuất từ hệ thống S-VOTES Pro vào lúc ${getVNDate()}`;
+                
+                // Định dạng: Chữ nghiêng, màu xám, căn lề PHẢI
+                footerCell.font = { 
+                    name: 'Times New Roman', 
+                    size: 11, 
+                    italic: true, 
+                    color: { argb: 'FF777777' } 
+                };
+                footerCell.alignment = { horizontal: 'right' }; // Căn lề phải ngoài cùng
+
+            // XUẤT FILE
+            const buffer = await workbook.xlsx.writeBuffer();
+            saveAs(new Blob([buffer]), `Hệ thống bình chọn tự động ${data.title.replace(/\s+/g, '_')}.xlsx`);
+            S_Notify.alert("Xuất file Excel thành công!");
+        }
+
+        // Lắng nghe sự kiện bàn phím
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                // 1. Thoát chế độ Toàn màn hình (F11/Presentation) nếu đang bật
+                if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(err => console.error(err));
+                }
+
+                // 2. Quay về giao diện Admin (Sơ đồ cột)
+                document.getElementById('view-admin').classList.remove('hidden');
+                document.getElementById('view-user').classList.add('hidden');
+
+                // 3. Đóng các lớp phủ (Overlay) nếu đang mở
+                // Đóng Zoom QR
+                document.getElementById('qr-zoom-overlay').style.display = 'none';
+                // Đóng thông báo thành công (nếu có)
+                const successOverlay = document.getElementById('success-overlay');
+                if (successOverlay) successOverlay.style.display = 'none';
+
+                console.log("Đã thoát về giao diện sơ đồ.");
+            }
+        });
+
+        // Thêm tính năng: Nhấn phím 'F' để vào chế độ Presentation (Toàn màn hình) chuyên nghiệp
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'f' && !document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    console.warn("Không thể vào chế độ toàn màn hình:", err);
+                });
+            }
+        });
+
+
+        const S_Notify = {
+    // 1. Hàm Alert hiện đại
+    alert: (msg, type = 'success') => {
+        const root = document.getElementById('s-notification-root');
+        const toast = document.createElement('div');
+        toast.className = `s-toast ${type}`;
+        
+        const icon = type === 'success' ? 'fa-circle-check text-emerald-400' : 'fa-circle-exclamation text-red-400';
+        toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${msg}</span>`;
+        
+        root.appendChild(toast);
+        
+        // Tự động xóa sau 3 giây
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-10px)';
+            toast.style.transition = '0.4s';
+            setTimeout(() => toast.remove(), 400);
+        }, 3000);
+    },
+
+    // 2. Hàm Confirm hiện đại
+    confirm: (msg, onYes) => {
+        const modal = document.getElementById('s-confirm-modal');
+        const msgEl = document.getElementById('s-confirm-msg');
+        const btnYes = document.getElementById('s-confirm-yes');
+        const btnNo = document.getElementById('s-confirm-no');
+
+        msgEl.innerText = msg;
+        modal.style.display = 'flex';
+
+        // Xử lý nút Đồng ý
+        btnYes.onclick = () => {
+            modal.style.display = 'none';
+            onYes();
+        };
+
+        // Xử lý nút Hủy
+        btnNo.onclick = () => {
+            modal.style.display = 'none';
+        };
+    }
+};
+
+window.addEventListener('beforeunload', (e) => {
+    if (currentId && localStorage.getItem('s_votes_active_id')) {
+        e.preventDefault();
+        e.returnValue = ''; // Hiện thông báo mặc định của trình duyệt
+    }
+});
+
+
+    </script>
+
+    <!-- Container cho Toast Thông báo -->
+<div id="s-notification-root" class="fixed top-10 left-1/2 -translate-x-1/2 z-[20000] flex flex-col gap-4 pointer-events-none"></div>
+
+<!-- Modal Khôi phục dữ liệu -->
+<div id="restore-modal" class="fixed inset-0 z-[30000] bg-black/80 backdrop-blur-2xl hidden items-center justify-center p-6">
+    <div class="glass max-w-lg w-full p-12 rounded-[50px] border border-indigo-500/30 text-center space-y-10 animate-in fade-in zoom-in duration-500">
+        <div class="w-24 h-24 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(99,102,241,0.3)]">
+            <i class="fa-solid fa-clock-rotate-left text-4xl text-indigo-400"></i>
+        </div>
+        <div class="space-y-4">
+            <h2 class="text-3xl font-black uppercase italic tracking-tighter text-white">Phát hiện dữ liệu cũ</h2>
+            <p id="restore-msg" class="text-slate-400 text-sm font-medium leading-relaxed uppercase tracking-widest">Bạn có muốn tiếp tục phiên bình chọn gần nhất không?</p>
+        </div>
+        <div class="grid grid-cols-1 gap-4">
+            <button onclick="handleRestore(true)" class="w-full py-5 rounded-[24px] btn-main text-white font-black uppercase text-xs tracking-[2px]">
+                Khôi phục bình chọn
+            </button>
+            <button onclick="handleRestore(false)" class="w-full py-5 rounded-[24px] bg-white/5 text-slate-500 hover:text-red-400 font-black uppercase text-xs tracking-[2px] transition-all">
+                Bắt đầu bình chọn mới
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="s-confirm-modal" class="fixed inset-0 z-[30001] hidden items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+    <div class="confirm-card">
+        <div class="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <i class="fa-solid fa-shield-heart text-3xl text-indigo-400"></i>
+        </div>
+        <h3 class="text-2xl font-black uppercase italic tracking-tighter text-white mb-3">Xác nhận thao tác</h3>
+        <p id="s-confirm-msg" class="text-slate-400 text-sm font-medium leading-relaxed mb-8"></p>
+        <div class="flex flex-col sm:flex-row gap-3">
+            <button id="s-confirm-no" class="btn-modern-ghost flex-1">Bỏ qua</button>
+            <button id="s-confirm-yes" class="btn-modern-primary flex-1">Đồng ý</button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
