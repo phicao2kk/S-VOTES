@@ -1115,17 +1115,22 @@ function filterTable() {
         }
 
         async function submitVote(idx) {
+            // --- TÍNH NĂNG CHẶN (Tạm thời tắt để test) ---
+            /* 
             if(localStorage.getItem('v_' + currentId)) {
                 S_Notify.alert("Bạn đã bình chọn rồi!", "error");
                 return;
             }
-            
+            */
+
             // Tạo hiệu ứng rung nhẹ khi bấm
             if (window.navigator.vibrate) window.navigator.vibrate(50);
 
             try {
                 await rdb.ref(`s_votes/polls/${currentId}/votes`).push(idx);
-                localStorage.setItem('v_' + currentId, true);
+                
+                // --- ĐÁNH DẤU ĐÃ BẦU (Tạm thời tắt để test bầu nhiều lần) ---
+                // localStorage.setItem('v_' + currentId, true);
                 
                 // Hiện overlay thành công
                 const overlay = document.getElementById('success-overlay');
@@ -1139,6 +1144,7 @@ function filterTable() {
                     colors: ['#10b981', '#34d399', '#ffffff']
                 });
             } catch (e) {
+                console.error(e);
                 S_Notify.alert("Lỗi kết nối mạng!", "error");
             }
         }
