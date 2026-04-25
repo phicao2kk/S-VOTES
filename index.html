@@ -652,7 +652,7 @@ img[alt="S-VOTES Logo"]:hover {
                     <div class="glass p-5 rounded-[30px] mt-0 mb-6 border border-white/5 bg-white/[0.02]">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-[9px] font-black text-indigo-400/70 uppercase tracking-[3px]">DANH SÁCH ĐANG CHẠY</h3>
-                            <button onclick="resetSystemHistory()" class="text-[9px] font-black text-red-500/80 hover:text-red-500 uppercase tracking-widest transition-all">
+                            <button onclick="masterResetSystem()" class="text-[9px] font-black text-red-500/80 hover:text-red-500 uppercase tracking-widest transition-all">
                                 XÓA TẤT CẢ
                             </button>
                         </div>
@@ -677,10 +677,22 @@ img[alt="S-VOTES Logo"]:hover {
                                     + THÊM LỰA CHỌN
                                 </button>               
                             </div>
-
-                        <button id="btn-activate" onclick="activatePoll()" class="btn-main w-full py-5 rounded-[24px] text-white uppercase text-xs">
-                            KÍCH HOẠT HỆ THỐNG
-                        </button>
+                        <div class="flex flex-col gap-4 mt-6">
+                            <!-- NÚT 1: LƯU VÀO DANH SÁCH (DÀNH CHO AI MUỐN CHẠY TIẾP) -->
+                            <button onclick="activatePoll()" class="btn-main w-full py-5 rounded-[24px] text-white uppercase text-xs flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(99,102,241,0.3)]">
+                                <i class="fa-solid fa-bolt"></i> KÍCH HOẠT & LƯU DANH SÁCH
+                            </button>
+                            
+                            <!-- NÚT 2: RESET TẤT CẢ (NHƯ MÀY MUỐN - XÓA SẠCH SÀNH SANH) -->
+                            <button onclick="masterResetSystem()" class="group relative w-full py-4 bg-red-500/10 border-2 border-dashed border-red-500/40 rounded-[24px] overflow-hidden transition-all hover:bg-red-600 hover:border-red-600 active:scale-95">
+                                <div class="flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-rotate text-red-500 group-hover:text-white group-hover:rotate-180 transition-all duration-500"></i>
+                                    <span class="text-[10px] font-black text-red-400 group-hover:text-white uppercase tracking-[2px]">Reset tất cả & Tạo bình chọn mới</span>
+                                </div>
+                                <!-- Hiệu ứng quét đỏ -->
+                                <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -825,26 +837,23 @@ async function handleRestore(isRestore) {
     document.getElementById('restore-modal').style.display = 'none';
     
     if (isRestore) {
-        const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
-        if(snap.exists()) {
-            const data = snap.val();
-            document.getElementById('vote-title').value = data.title;
-            document.getElementById('options-list').innerHTML = "";
-            data.options.forEach(opt => addOptionField(opt));
+        // Chỉ load dữ liệu lên Báo cáo (Biểu đồ + QR)
+        loadPoll(currentId); 
+        refreshPollList();
+        
+        // Dọn sạch Form nhập liệu để Admin làm cái mới luôn
+        document.getElementById('vote-title').value = "";
+        document.getElementById('options-list').innerHTML = "";
+        addOptionField("Ứng viên A");
+        addOptionField("Ứng viên B");
 
-            loadPoll(currentId); 
-            refreshPollList();
-            
-            // CHỜ 1 GIÂY CHO CHẮC CÚ
-            setTimeout(() => {
-                renderBarChart();
-            }, 1000);
+        setTimeout(() => {
+            if (typeof renderBarChart === 'function') renderBarChart();
+        }, 1000);
 
-            S_Notify.alert("Đã khôi phục phiên làm việc!");
-        }
+        S_Notify.alert("Đã khôi phục báo cáo. Form nhập liệu sẵn sàng cho chủ đề mới!");
     } else {
-        localStorage.clear();
-        location.reload();
+        masterResetSystem(); // Nếu chọn không khôi phục thì xóa sạch
     }
 }
 
@@ -882,41 +891,33 @@ async function handleRestore(isRestore) {
             const title = titleInput.value.trim();
             const options = Array.from(document.querySelectorAll('.opt')).map(i => i.value.trim()).filter(x => x);
             
-            // 1. Kiểm tra điều kiện nhập liệu
             if(!title || options.length < 2) {
                 S_Notify.alert("Vui lòng nhập đủ chủ đề và phương án", "error");
                 return;
             }
 
-            // --- LOGIC HỦY KHÓA VÀ KHÔNG THÔNG BÁO XÁC NHẬN ---
-
-            // 2. Tạo ID và dữ liệu cho bình chọn mới
             const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
             const pollData = { title, options, ts: Date.now() };
 
-            // 3. Đẩy dữ liệu lên Firebase
             await rdb.ref('s_votes/polls/' + pollId).set(pollData);
 
-            // 4. Cập nhật danh sách ID vào LocalStorage (Thêm vào đầu danh sách hiện tại)
             let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
-            list.unshift(pollId); // Thêm ID mới vào đầu mảng
+            list.unshift(pollId);
             
             localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
             localStorage.setItem('s_votes_active_id', pollId);
 
-            // 5. Reset Form nhập liệu để sẵn sàng cho chủ đề tiếp theo
-            titleInput.value = ""; 
-            document.getElementById('options-list').innerHTML = "";
-            addOptionField("Ứng viên A"); 
-            addOptionField("Ứng viên B");
-
-            // 6. Hiển thị bình chọn vừa tạo lên Báo cáo và Danh sách quản lý
+            // SAU KHI LƯU XONG -> LOAD LÊN BÁO CÁO VÀ RESET FORM NHẬP
             loadPoll(pollId); 
             refreshPollList();
             
-            S_Notify.alert("Kích hoạt hệ thống thành công!");
+            // Tự động xóa form sau khi lưu để admin soạn cái tiếp theo
+            titleInput.value = "";
+            document.getElementById('options-list').innerHTML = "";
+            addOptionField("Ứng viên A");
+            addOptionField("Ứng viên B");
 
-            // Tự động cuộn lên đầu trang
+            S_Notify.alert("Kích hoạt thành công! Dữ liệu đã được lưu vào danh sách.");
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -998,38 +999,42 @@ async function loadPoll(id) {
     currentId = id;
     localStorage.setItem('s_votes_active_id', id);
 
-    // Xóa sạch biểu đồ cũ để vẽ lại khung cuộn mới
-    document.getElementById('vote-bars').innerHTML = ""; 
+    // 1. CHỈ CẬP NHẬT BÁO CÁO (BIỂU ĐỒ)
+    document.getElementById('vote-bars').innerHTML = ""; // Reset khung vẽ
 
     const snap = await rdb.ref('s_votes/polls/' + id).once('value');
     const data = snap.val();
     if(!data) return;
 
+    // Cập nhật tiêu đề báo cáo và đèn Live
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
-    // HIỆN KHUNG QR TRƯỚC
+    // 2. CHỈ CẬP NHẬT QR CODE
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
 
     const url = window.location.origin + window.location.pathname + "?room=" + id;
-    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
     
     const container = document.getElementById('qr-code');
-    container.innerHTML = ""; // Xóa trắng
-    
-    // Dùng object Image để đảm bảo load xong mới nạp vào DOM
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.src = qrImageUrl;
+    img.src = lastQR;
     img.className = "w-56 h-56 object-contain shadow-2xl rounded-xl";
     img.onload = () => {
+        container.innerHTML = "";
         container.appendChild(img);
     };
 
+    // 3. LẮNG NGHE DỮ LIỆU REAL-TIME
     listenResults(id);
+    
+    // 4. CẬP NHẬT TRẠNG THÁI ACTIVE TRÊN DANH SÁCH
     refreshPollList();
+    
+    // TUYỆT ĐỐI KHÔNG ĐỤNG CHẠM GÌ ĐẾN FORM NHẬP LIỆU Ở ĐÂY
 }
 
         function deletePoll(id) {
@@ -1196,14 +1201,17 @@ function filterTable() {
     renderBarChart();
 }
 
-        async function renderUserPoll(id) {
+       async function renderUserPoll(id) {
             document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-user').classList.remove('hidden');
             const snap = await rdb.ref('s_votes/polls/' + id).once('value');
-            const data = snap.val(); currentId = id;
+            const data = snap.val(); 
+            currentId = id;
+            
             document.getElementById('u-title').innerText = data.title;
+            // ĐỔI onclick THÀNH confirmVote
             document.getElementById('u-options').innerHTML = data.options.map((opt, i) => `
-                <button onclick="submitVote(${i})" class="glass p-10 rounded-[40px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
+                <button onclick="confirmVote(${i}, '${opt}')" class="glass p-10 rounded-[40px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
                     <span class="text-2xl font-black uppercase italic group-hover:text-indigo-400">${opt}</span>
                     <i class="fa-solid fa-chevron-right text-slate-800 group-hover:text-indigo-500"></i>
                 </button>`).join('');
@@ -1245,9 +1253,14 @@ function filterTable() {
         }
 
         function zoomQR() { 
-            document.getElementById('qr-zoom-content').innerHTML = `<img src="${lastQR}" class="w-[75vmin] h-[75vmin] object-contain rounded-3xl">`;
+            if(!lastQR) return S_Notify.alert("Chưa có mã QR để phóng to!", "error");
+            
+            const content = document.getElementById('qr-zoom-content');
+            content.innerHTML = `<img src="${lastQR}" class="w-[75vmin] h-[75vmin] object-contain rounded-3xl shadow-[0_0_100px_rgba(255,255,255,0.2)]">`;
+            
             document.getElementById('qr-zoom-overlay').style.display = 'flex';
         }
+
         async function downloadQR() {
             const card = document.getElementById('qr-card-capture');
             if (!card) return S_Notify.alert("Không tìm thấy khung QR!", "error");
@@ -1303,105 +1316,135 @@ function filterTable() {
         }
 
         // HÀM XUẤT EXCEL CÓ ĐỊNH DẠNG CHUẨN NHƯ HÌNH
-        async function exportExcel() {
-            if(!currentId) return S_Notify.alert("Chưa có dữ liệu để xuất!", "error");
+async function exportExcel() {
+    const listIds = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
+    
+    if (listIds.length === 0) {
+        return S_Notify.alert("Danh sách trống, không có gì để xuất!", "error");
+    }
 
-            const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
+    try {
+        S_Notify.alert("Đang gộp dữ liệu và định dạng trang...");
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('BÁO CÁO TỔNG HỢP');
+        let allTitles = []; // Thu thập tên cho file
+
+        // 1. KHÓA CỘT A VÀ KHÓA 2 DÒNG ĐẦU (Freeze Panes)
+        worksheet.views = [
+            { state: 'frozen', xSplit: 1, ySplit: 2 }
+        ];
+
+        // 2. SET ĐỘ RỘNG CỘT CỰC RỘNG (Chống cắt chữ)
+        worksheet.getColumn(1).width = 10; // Cột A: STT
+        worksheet.getColumn(2).width = 65; // Cột B: Phương án (Rộng hẳn ra)
+        worksheet.getColumn(3).width = 20; // Cột C: Số lượt bầu
+        worksheet.getColumn(4).width = 18; // Cột D: Tỷ lệ %
+
+        let currentRow = 1;
+
+        // 3. HEADER TỔNG CỦA CẢ SHEET (Dòng 1 & 2)
+        worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
+        const mainHeader = worksheet.getCell(`A${currentRow}`);
+        mainHeader.value = 'HỆ THỐNG BÌNH CHỌN S-VOTES PRO - BÁO CÁO TỔNG HỢP';
+        mainHeader.font = { name: 'Times New Roman', size: 20, bold: true, color: { argb: 'FF1E40AF' } };
+        mainHeader.alignment = { horizontal: 'center', vertical: 'middle' };
+        currentRow++;
+
+        worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
+        const subMainHeader = worksheet.getCell(`A${currentRow}`);
+        subMainHeader.value = `Ngày xuất báo cáo: ${getVNDate()}`;
+        subMainHeader.font = { name: 'Times New Roman', size: 12, italic: true };
+        subMainHeader.alignment = { horizontal: 'center' };
+        currentRow += 2; // Cách ra 1 dòng trắng
+
+        // 4. VÒNG LẶP ĐỔ TỪNG BẢNG BÌNH CHỌN
+        for (const [idx, pollId] of listIds.entries()) {
+            const snap = await rdb.ref('s_votes/polls/' + pollId).once('value');
             const data = snap.val();
+            if (data) allTitles.push(data.title);
+            if (!data) continue;
+
             const votes = data.votes ? Object.values(data.votes) : [];
             const counts = new Array(data.options.length).fill(0);
             votes.forEach(v => counts[v]++);
 
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('BÁO CÁO S-VOTES');
+            // Tiêu đề của từng cuộc bầu chọn
+            worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
+            const pollTitleCell = worksheet.getCell(`A${currentRow}`);
+            pollTitleCell.value = `${idx + 1}. ${data.title.toUpperCase()}`;
+            pollTitleCell.font = { name: 'Times New Roman', size: 14, bold: true };
+            pollTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+            pollTitleCell.border = { bottom: { style: 'thin' } };
+            currentRow++;
 
-            // --- CẤU HÌNH KHÓA CỘT A VÀ DÒNG 1, 2, 3 (Freeze Panes) ---
-            // xSplit: 1 (Khóa 1 cột đầu - cột A)
-            // ySplit: 3 (Khóa 3 dòng đầu - dòng 1, 2 và tiêu đề bảng ở dòng 3)
-            worksheet.views = [
-                { state: 'frozen', xSplit: 1, ySplit: 3 }
-            ];
-
-            // 1. HEADER CHÍNH (Đẩy về cột A)
-            worksheet.mergeCells('A1:D1');
-            const titleCell = worksheet.getCell('A1');
-            titleCell.value = 'HỆ THỐNG BÌNH CHỌN TỰ ĐỘNG';
-            titleCell.font = { name: 'Times New Roman', size: 20, bold: true };
-            titleCell.alignment = { horizontal: 'center' };
-
-            worksheet.mergeCells('A2:D2');
-            const subTitleCell = worksheet.getCell('A2');
-            subTitleCell.value = data.title.toUpperCase();
-            subTitleCell.font = { name: 'Times New Roman', size: 14, bold: true };
-            subTitleCell.alignment = { horizontal: 'center' };
-
-            // 2. TIÊU ĐỀ BẢNG (Dòng 3, Bắt đầu từ A)
-            const headerRow = worksheet.getRow(3);
+            // Tiêu đề cột (Dòng màu xanh)
+            const headerRow = worksheet.getRow(currentRow);
             headerRow.values = ['STT', 'PHƯƠNG ÁN BẦU CHỌN', 'SỐ LƯỢT BẦU', 'TỶ LỆ %'];
-            
+            headerRow.height = 25; // Tăng chiều cao dòng tiêu đề
             headerRow.eachCell((cell) => {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003399' } }; // Màu xanh đậm
-                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003399' } };
+                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Times New Roman', size: 11 };
                 cell.alignment = { horizontal: 'center', vertical: 'middle' };
                 cell.border = { 
                     top: {style:'thin'}, left: {style:'thin'}, 
                     bottom: {style:'thin'}, right: {style:'thin'} 
                 };
             });
+            currentRow++;
 
-            // 3. ĐỔ DỮ LIỆU VÀO BẢNG
+            // Đổ dữ liệu nội dung
             data.options.forEach((opt, i) => {
-                const row = worksheet.addRow([
-                    i + 1, // Cột A
-                    opt,   // Cột B
-                    counts[i], // Cột C
-                    ((counts[i] / (votes.length || 1)) * 100).toFixed(1) + '%' // Cột D
-                ]);
-                
+                const row = worksheet.getRow(currentRow);
+                row.values = [
+                    i + 1,
+                    opt,
+                    counts[i],
+                    ((counts[i] / (votes.length || 1)) * 100).toFixed(1) + '%'
+                ];
+                row.height = 22; // Tăng chiều cao dòng cho thoáng
                 row.eachCell((cell) => {
-                    cell.alignment = { horizontal: 'center' };
+                    cell.font = { name: 'Times New Roman', size: 11 };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; // wrapText để tự xuống dòng nếu quá dài
                     cell.border = { 
                         top: {style:'thin'}, left: {style:'thin'}, 
                         bottom: {style:'thin'}, right: {style:'thin'} 
                     };
                 });
+                currentRow++;
             });
 
-            // 4. THIẾT LẬP BỘ LỌC TỰ ĐỘNG (Bắt đầu từ A3 đến D3)
-            worksheet.autoFilter = 'A3:D3';
-
-            // 5. THIẾT LẬP ĐỘ RỘNG CỘT
-            worksheet.getColumn(1).width = 10; // Cột A
-            worksheet.getColumn(2).width = 40; // Cột B
-            worksheet.getColumn(3).width = 20; // Cột C
-            worksheet.getColumn(4).width = 15; // Cột D
-
-            // 6. THÊM FOOTER (Ghi chú thời gian căn lề phải ngoài cùng)
-                worksheet.addRow([]); // Thêm 1 dòng trống để giãn cách
-                
-                // Lấy số dòng hiện tại để merge
-                const footerRowNum = worksheet.lastRow.number + 1;
-                
-                // Merge từ cột A đến cột D (toàn bộ chiều rộng bảng)
-                worksheet.mergeCells(`A${footerRowNum}:D${footerRowNum}`);
-                
-                const footerCell = worksheet.getCell(`A${footerRowNum}`);
-                footerCell.value = `Báo cáo được xuất từ hệ thống S-VOTES Pro vào lúc ${getVNDate()}`;
-                
-                // Định dạng: Chữ nghiêng, màu xám, căn lề PHẢI
-                footerCell.font = { 
-                    name: 'Times New Roman', 
-                    size: 11, 
-                    italic: true, 
-                    color: { argb: 'FF777777' } 
-                };
-                footerCell.alignment = { horizontal: 'right' }; // Căn lề phải ngoài cùng
-
-            // XUẤT FILE
-            const buffer = await workbook.xlsx.writeBuffer();
-            saveAs(new Blob([buffer]), `Hệ thống bình chọn tự động ${data.title.replace(/\s+/g, '_')}.xlsx`);
-            S_Notify.alert("Xuất file Excel thành công!");
+            // Footer nhỏ của từng bảng
+            worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
+            const miniFooter = worksheet.getCell(`A${currentRow}`);
+            miniFooter.value = `* Tổng số phiếu: ${votes.length} phiếu - Thời gian lưu: ${new Date(data.ts).toLocaleString()}`;
+            miniFooter.font = { name: 'Times New Roman', size: 9, italic: true, color: { argb: 'FF555555' } };
+            miniFooter.alignment = { horizontal: 'right' };
+            
+            currentRow += 3; // Khoảng cách giữa các bảng
         }
+
+        // 5. XUẤT FILE
+        // 5. XUẤT FILE VỚI TÊN ĐỘNG
+        const buffer = await workbook.xlsx.writeBuffer();
+        
+        // Gộp các tiêu đề lại bằng dấu " + ", xóa ký tự đặc biệt để tránh lỗi file
+        let combinedName = allTitles.join(' + ').replace(/[\\/:*?"<>|]/g, '');
+        
+        // Giới hạn chiều dài tên file (tránh lỗi Windows nếu quá 255 ký tự)
+        if (combinedName.length > 150) {
+            combinedName = combinedName.substring(0, 147) + '...';
+        }
+
+        const finalFileName = `Báo cáo tổng hợp ${combinedName}.xlsx`;
+
+        saveAs(new Blob([buffer]), finalFileName);
+        S_Notify.alert("Xuất báo cáo tổng hợp thành công!");
+
+    } catch (error) {
+        console.error("Lỗi Excel:", error);
+        S_Notify.alert("Lỗi: " + error.message, "error");
+    }
+}
 
         // Lắng nghe sự kiện bàn phím
         window.addEventListener('keydown', (e) => {
@@ -1487,6 +1530,50 @@ window.addEventListener('beforeunload', (e) => {
     }
 });
 
+// Hàm trung gian để xác nhận trước khi bầu
+function confirmVote(idx, name) {
+    S_Notify.confirm(`Bạn có chắc chắn muốn bầu chọn cho: "${name.toUpperCase()}"?`, () => {
+        submitVote(idx);
+    });
+}
+
+function clearPollForm() {
+    // 1. Reset tiêu đề
+    const titleInput = document.getElementById('vote-title');
+    titleInput.value = "";
+    
+    // 2. Xóa sạch các lựa chọn đang gõ dở
+    const list = document.getElementById('options-list');
+    list.innerHTML = "";
+    
+    // 3. Thêm lại 2 ô mặc định cho sang
+    addOptionField("Ứng viên A");
+    addOptionField("Ứng viên B");
+    
+    // 4. Focus vào ô tiêu đề để gõ luôn
+    titleInput.focus();
+    
+    // 5. Thông báo cho Admin yên tâm
+    S_Notify.alert("Đã dọn sạch khung soạn thảo. Danh sách đang chạy vẫn được giữ nguyên!");
+}
+
+function masterResetSystem() {
+    S_Notify.confirm("XÁC NHẬN: Hệ thống sẽ xóa sạch TOÀN BỘ danh sách đang chạy và làm trống Form. Bạn chắc chắn chứ?", () => {
+        // 1. Ngắt kết nối Firebase hiện tại để biểu đồ ngừng nhảy
+        if (currentId) rdb.ref('s_votes/polls/' + currentId).off();
+
+        // 2. Lệnh "Hủy diệt": Xóa sạch LocalStorage (Danh sách, ID, Lịch sử bầu)
+        localStorage.clear();
+
+        // 3. Thông báo cho Admin biết đã xong
+        S_Notify.alert("Hệ thống đã được xóa sạch hoàn toàn!");
+
+        // 4. LOAD LẠI TRANG ĐỂ RESET GIAO DIỆN VỀ TRẮNG TINH
+        setTimeout(() => {
+            location.reload();
+        }, 800);
+    });
+}
 
     </script>
 
@@ -1494,21 +1581,24 @@ window.addEventListener('beforeunload', (e) => {
 <div id="s-notification-root" class="fixed top-10 left-1/2 -translate-x-1/2 z-[20000] flex flex-col gap-4 pointer-events-none"></div>
 
 <!-- Modal Khôi phục dữ liệu -->
-<div id="restore-modal" class="fixed inset-0 z-[30000] bg-black/80 backdrop-blur-2xl hidden items-center justify-center p-6">
-    <div class="glass max-w-lg w-full p-12 rounded-[50px] border border-indigo-500/30 text-center space-y-10 animate-in fade-in zoom-in duration-500">
-        <div class="w-24 h-24 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto shadow-[0_0_50px_rgba(99,102,241,0.3)]">
-            <i class="fa-solid fa-clock-rotate-left text-4xl text-indigo-400"></i>
+<div id="restore-modal" class="fixed inset-0 z-[30000] bg-[#030712]/90 backdrop-blur-2xl hidden items-center justify-center p-6">
+    <div class="glass max-w-md w-full p-10 rounded-[40px] border border-white/10 text-center animate-in fade-in zoom-in duration-500">
+        <div class="w-20 h-20 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_40px_rgba(99,102,241,0.2)]">
+            <i class="fa-solid fa-clock-rotate-left text-3xl text-indigo-400"></i>
         </div>
-        <div class="space-y-4">
-            <h2 class="text-3xl font-black uppercase italic tracking-tighter text-white">Phát hiện dữ liệu cũ</h2>
-            <p id="restore-msg" class="text-slate-400 text-sm font-medium leading-relaxed uppercase tracking-widest">Bạn có muốn tiếp tục phiên bình chọn gần nhất không?</p>
-        </div>
-        <div class="grid grid-cols-1 gap-4">
-            <button onclick="handleRestore(true)" class="w-full py-5 rounded-[24px] btn-main text-white font-black uppercase text-xs tracking-[2px]">
-                Khôi phục bình chọn
+        
+        <h2 class="text-2xl font-black uppercase italic tracking-tighter text-white mb-2">Phát hiện dữ liệu cũ</h2>
+        <p class="text-slate-400 text-xs font-bold uppercase tracking-[2px] mb-10 leading-relaxed">Bạn muốn tiếp tục phiên làm việc cũ hay xóa sạch để bắt đầu mới?</p>
+        
+        <div class="flex flex-col gap-4">
+            <!-- NÚT 1: KHÔI PHỤC (Làm tiếp) -->
+            <button onclick="handleRestore(true)" class="btn-main w-full py-5 rounded-[24px] text-white font-black uppercase text-xs tracking-[2px] shadow-lg shadow-indigo-500/20">
+                <i class="fa-solid fa-play mr-2"></i> Tiếp tục bình chọn
             </button>
-            <button onclick="handleRestore(false)" class="w-full py-5 rounded-[24px] bg-white/5 text-slate-500 hover:text-red-400 font-black uppercase text-xs tracking-[2px] transition-all">
-                Bắt đầu bình chọn mới
+            
+            <!-- NÚT 2: XÓA SẠCH (Reset toàn bộ) -->
+            <button onclick="masterResetSystem()" class="w-full py-4 bg-red-500/10 border border-red-500/30 rounded-[24px] text-[10px] font-black text-red-400 uppercase tracking-[2px] hover:bg-red-500 hover:text-white transition-all">
+                <i class="fa-solid fa-trash-can mr-2"></i> Xóa sạch & Làm mới hệ thống
             </button>
         </div>
     </div>
