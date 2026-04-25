@@ -515,10 +515,11 @@ img[alt="S-VOTES Logo"]:hover {
 
 /* Đảm bảo danh sách không bị cắt viền khi cuộn */
 #active-polls-list {
-    max-height: 175px !important; /* Chiều cao này chỉ chứa được đúng 2 mục, mục 3 sẽ bị đẩy xuống */
+    /* Chiều cao chuẩn cho 2 mục (mỗi mục ~82px + margin). Mục 3 sẽ bị ẩn một nửa để bắt đầu cuộn */
+    max-height: 170px !important; 
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 5px;
+    padding: 2px 5px;
     scroll-behavior: smooth;
 }
 
@@ -877,7 +878,7 @@ img[alt="S-VOTES Logo"]:hover {
             document.getElementById('view-user').classList.remove('hidden');
 
             const statusEl = document.getElementById('u-title');
-            statusEl.innerText = "ĐANG TẢI DỮ LIỆU...";
+            statusEl.innerText = "ĐANG TẢI...";
 
             userPollsQueue = []; 
             userCurrentIndex = 0;
@@ -890,16 +891,12 @@ img[alt="S-VOTES Logo"]:hover {
                 return;
             }
 
-            // Nạp dữ liệu
-            for (let id of activeIds) {
-                const pSnap = await rdb.ref('s_votes/polls/' + id).once('value');
-                if (pSnap.val()) {
-                    userPollsQueue.push({ id, ...pSnap.val() });
-                }
-            }
+            // Tải dữ liệu các poll
+            const pSnaps = await Promise.all(activeIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
+            userPollsQueue = pSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
 
-            // --- QUAN TRỌNG: SẮP XẾP THEO THỨ TỰ THỜI GIAN TẠO ---
-            userPollsQueue.sort((a, b) => a.ts - b.ts); 
+            // BẮT BUỘC SẮP XẾP: Để mục 1 hiện đầu tiên trên điện thoại
+            userPollsQueue.sort((a, b) => a.ts - b.ts);
 
             if (userPollsQueue.length > 0) {
                 showPollStep(0);
@@ -1126,7 +1123,7 @@ async function handleRestore(isRestore) {
             });
         }
 
-        function refreshPollList() {
+        async function refreshPollList() {
             const list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
             const container = document.getElementById('active-polls-list');
             
@@ -1135,34 +1132,35 @@ async function handleRestore(isRestore) {
                 return;
             }
 
-            container.innerHTML = "";
+            // 1. Tải tất cả dữ liệu từ Firebase về trước
+            const snapshots = await Promise.all(list.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
             
-            // Lấy dữ liệu và sắp xếp trước khi hiển thị
-            const pollPromises = list.map(id => rdb.ref('s_votes/polls/' + id).once('value'));
-            
-            Promise.all(pollPromises).then(snapshots => {
-                const polls = snapshots.map(s => ({id: s.key, ...s.val()})).filter(p => p.title);
-                
-                // Sắp xếp 1 lên đầu, mới nhất ở dưới
-                polls.sort((a, b) => a.ts - b.ts);
+            // 2. Lọc và sắp xếp theo thời gian tạo (Mục 1 tạo trước sẽ lên đầu)
+            const polls = snapshots
+                .map(s => ({ id: s.key, ...s.val() }))
+                .filter(p => p.title)
+                .sort((a, b) => a.ts - b.ts); 
 
-                polls.forEach(poll => {
-                    const wrapper = document.createElement('div');
-                    wrapper.className = "flex items-center gap-3 mb-4 group";
-                    const isActive = (poll.id === currentId);
-                    
-                    wrapper.innerHTML = `
-                        <div onclick="loadPoll('${poll.id}')" 
-                            class="poll-card flex-1 p-4 rounded-2xl cursor-pointer transition-all border
-                                    ${isActive ? 'bg-indigo-500/15 border-indigo-500 border-l-4' : 'bg-white/5 border-white/10'}">
-                            <p class="text-[11px] font-black text-white uppercase truncate">${poll.title}</p>
-                        </div>
-                        <button onclick="deletePoll('${poll.id}')" class="text-red-500 p-2">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    `;
-                    container.appendChild(wrapper);
-                });
+            // 3. XÓA SẠCH giao diện trước khi vẽ (Chống nhân đôi)
+            container.innerHTML = "";
+
+            // 4. Vẽ lại danh sách đã sắp xếp
+            polls.forEach(poll => {
+                const wrapper = document.createElement('div');
+                wrapper.className = "flex items-center gap-3 mb-3 group"; // Dùng mb-3 để khít hơn
+                const isActive = (poll.id === currentId);
+                
+                wrapper.innerHTML = `
+                    <div onclick="loadPoll('${poll.id}')" 
+                        class="poll-card flex-1 p-4 rounded-2xl cursor-pointer transition-all border
+                                ${isActive ? 'bg-indigo-500/15 border-indigo-500 border-l-4 shadow-lg' : 'bg-white/5 border-white/10 opacity-60'}">
+                        <p class="text-[11px] font-black text-white uppercase truncate">${poll.title}</p>
+                    </div>
+                    <button onclick="deletePoll('${poll.id}')" class="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all">
+                        <i class="fa-solid fa-trash-can text-sm"></i>
+                    </button>
+                `;
+                container.appendChild(wrapper);
             });
         }
 
