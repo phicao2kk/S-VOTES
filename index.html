@@ -515,7 +515,10 @@ img[alt="S-VOTES Logo"]:hover {
 
 /* Đảm bảo danh sách không bị cắt viền khi cuộn */
 #active-polls-list {
-    padding: 2px; /* Thêm padding nhỏ để không mất viền */
+    max-height: 280px; /* Giới hạn chiều cao hiện khoảng 4 mục */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 10px 5px; /* Thêm padding để không bị dính viền */
     scroll-behavior: smooth;
 }
 
@@ -631,10 +634,10 @@ img[alt="S-VOTES Logo"]:hover {
     <!-- NAV -->
     <nav class="fixed top-0 left-0 right-0 h-16 flex items-center justify-between px-6 lg:px-12 border-b border-white/5 backdrop-blur-2xl bg-[#030712]/90 z-[100]">
         <div class="flex items-center gap-3">
-            <div class="w-12 h-12 rounded-[18px] overflow-hidden shadow-lg shadow-indigo-500/30 border border-white/10 bg-[#0f172a]">
+            <div class="w-12 h-12 rounded-[18px] overflow-hidden shadow-lg shadow-indigo-500/30 border border-white/10 bg-[#0f172a] p-1.5">
                 <img src="https://i.ibb.co/wFxKg2yN/S-VOTES.png" 
                     alt="S-VOTES Logo" 
-                    class="w-full h-full object-cover"> <!-- Đổi object-contain thành object-cover để đầy khung -->
+                    class="w-full h-full object-contain">
             </div>
             <div>
                 <span class="text-2xl font-black tracking-tighter uppercase italic">S-VOTES</span>
@@ -1054,26 +1057,35 @@ async function handleRestore(isRestore) {
             const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
             const pollData = { title, options, ts: Date.now() };
 
-            // 1. Lưu nội dung poll
             await rdb.ref('s_votes/polls/' + pollId).set(pollData);
-
-            // 2. Thêm ID này vào danh sách "Sự kiện đang chạy" trên Firebase
             await rdb.ref('s_votes/active_event_list').child(pollId).set(true);
 
-            // Lưu local như cũ để quản lý
             let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
-            list.unshift(pollId);
+            
+            // Đổi unshift thành push nếu bạn muốn mục mới luôn nằm ở dưới cùng
+            list.push(pollId); 
+            
             localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
             localStorage.setItem('s_votes_active_id', pollId);
 
             loadPoll(pollId); 
             refreshPollList();
             
+            // --- ĐOẠN CODE MỚI: TỰ ĐỘNG CUỘN XUỐNG ---
+            const pollListContainer = document.getElementById('active-polls-list');
+            setTimeout(() => {
+                pollListContainer.scrollTo({
+                    top: pollListContainer.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 500); // Đợi 0.5s để danh sách kịp render xong rồi mới cuộn
+            // ---------------------------------------
+
             titleInput.value = "";
             document.getElementById('options-list').innerHTML = "";
             addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
 
-            S_Notify.alert("Đã thêm vào sự kiện tổng hợp!");
+            S_Notify.alert("Đã kích hoạt mục mới!");
         }
 
         function resetSystemHistory() {
