@@ -1094,19 +1094,16 @@ function renderBarChart() {
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
-    // 1. Chuẩn bị dữ liệu và Sắp xếp (Dữ liệu này dùng để xác định vị trí X)
     let chartData = data.options.map((name, index) => ({
-        id: `col-opt-${index}`, // ID gắn chết với phương án ban đầu
+        id: `col-opt-${index}`, 
         name: name,
         votes: counts[index]
     })).sort((a, b) => b.votes - a.votes);
 
-    // 2. Hiển thị khung chứa
     const container = document.getElementById('vote-bars');
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // Tạo khung trục tọa độ nếu chưa có (Chỉ chạy 1 lần duy nhất)
     if (!container.querySelector('.chart-frame')) {
         container.innerHTML = `
             <div class="chart-frame">
@@ -1115,50 +1112,43 @@ function renderBarChart() {
             </div>`;
     }
     const frame = container.querySelector('.chart-frame');
-
-    // 3. Tính toán thông số khung hình
     const frameWidth = frame.clientWidth;
-    const itemsCount = chartData.length;
-    const step = frameWidth / (itemsCount + 1); 
+    const step = frameWidth / (chartData.length + 1); 
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
-    // 4. Vòng lặp cập nhật từng cột
     chartData.forEach((item, index) => {
         let colEl = document.getElementById(item.id);
         
-        // Nếu cột chưa tồn tại (ví dụ vừa thêm phương án mới), tạo mới nó ở trạng thái 0
         if (!colEl) {
             colEl = document.createElement('div');
             colEl.id = item.id;
             colEl.className = 'column-item';
             colEl.innerHTML = `
-                <div class="column-bar" style="height: 0%">
+                <div class="column-bar" style="height: 0%; min-height: 2px;">
                     <span class="column-votes">0</span>
                 </div>
                 <span class="column-name">${item.name}</span>
             `;
             frame.appendChild(colEl);
+            
+            // --- BÍ QUYẾT Ở ĐÂY: ÉP TRÌNH DUYỆT NHẬN DIỆN CỘT 0% ---
+            colEl.offsetHeight; 
         }
 
-        // TÍNH TOÁN TỌA ĐỘ VÀ CHIỀU CAO
-        const xPos = (index + 1) * step - 30; // 30 là nửa chiều rộng cột 60px
-        const hPercent = (item.votes / maxVotes) * 85; // Tối đa 85% chiều cao khung
+        const xPos = (index + 1) * step - 30;
+        const hPercent = (item.votes / maxVotes) * 85;
 
-        // BÍ QUYẾT: Dùng requestAnimationFrame để ép trình duyệt nhận diện Transition
-        requestAnimationFrame(() => {
-            // Di chuyển ngang mượt mà (dựa vào CSS transition: transform)
-            colEl.style.transform = `translateX(${xPos}px)`;
-            
-            // Kéo dài cột mượt mà (dựa vào CSS transition: height)
-            const bar = colEl.querySelector('.column-bar');
-            if (bar) bar.style.height = `${hPercent}%`;
-            
-            // Cập nhật số liệu trên đỉnh
-            const voteText = colEl.querySelector('.column-votes');
-            if (voteText) voteText.innerText = item.votes;
-        });
+        // Cập nhật vị trí và chiều cao
+        colEl.style.transform = `translateX(${xPos}px)`;
+        const bar = colEl.querySelector('.column-bar');
         
-        // Xử lý Lọc dữ liệu (Filter)
+        // Dùng setTimeout cực ngắn để đảm bảo hiệu ứng chạy
+        setTimeout(() => {
+            bar.style.height = `${hPercent}%`;
+            colEl.querySelector('.column-votes').innerText = item.votes;
+        }, 10);
+        
+        // Xử lý Lọc dữ liệu
         if (item.name.toLowerCase().includes(filterText)) {
             colEl.style.opacity = "1";
             colEl.style.visibility = "visible";
@@ -1168,7 +1158,6 @@ function renderBarChart() {
         }
     });
 
-    // 5. Dọn dẹp: Nếu phương án bị xóa ở Setup, hãy xóa cột tương ứng trên biểu đồ
     const currentIds = chartData.map(d => d.id);
     frame.querySelectorAll('.column-item').forEach(el => {
         if (!currentIds.includes(el.id)) el.remove();
