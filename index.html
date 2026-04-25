@@ -831,22 +831,112 @@ img[alt="S-VOTES Logo"]:hover {
 
         window.onload = async () => {
             const params = new URLSearchParams(window.location.search);
+            const mode = params.get('mode');
             const room = params.get('room');
 
-            if (room) { 
-                renderUserPoll(room); 
+            if (mode === 'event') { 
+                renderEventPoll(); // Chế độ quét 1 lần làm tất cả
+            } else if (room) {
+                renderUserPoll(room); // Chế độ làm lẻ (nếu cần)
             } else {
+                // Logic Admin như cũ...
                 const savedId = localStorage.getItem('s_votes_active_id');
                 if (savedId) {
-                    // Hiện Modal khôi phục to
                     document.getElementById('restore-modal').style.display = 'flex';
-                    currentId = savedId; // Tạm giữ ID
+                    currentId = savedId;
                 } else {
-                    // Nếu không có dữ liệu cũ, hiện 2 ô mặc định
                     addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
                 }
+                refreshPollList();
             }
         };
+
+        let userPollsQueue = [];
+        let userCurrentIndex = 0;
+        let userAnswers = {};
+
+        async function renderEventPoll() {
+            document.getElementById('view-admin').classList.add('hidden');
+            document.getElementById('view-user').classList.remove('hidden');
+
+            // Lấy danh sách các ID đang chạy từ Firebase
+            const snap = await rdb.ref('s_votes/active_event_list').once('value');
+            const activeIds = snap.val() ? Object.keys(snap.val()) : [];
+
+            if (activeIds.length === 0) {
+                document.getElementById('u-title').innerText = "KHÔNG CÓ SỰ KIỆN NÀO";
+                return;
+            }
+
+            // Lấy chi tiết từng poll
+            userPollsQueue = [];
+            for (let id of activeIds) {
+                const pSnap = await rdb.ref('s_votes/polls/' + id).once('value');
+                if (pSnap.val()) userPollsQueue.push({ id, ...pSnap.val() });
+            }
+
+            showPollStep(0);
+        }
+
+        function showPollStep(index) {
+            if (index >= userPollsQueue.length) {
+                finishAllVotes();
+                return;
+            }
+
+            userCurrentIndex = index;
+            const poll = userPollsQueue[index];
+            
+            // Hiển thị tiến trình (ví dụ: Câu 1/3)
+            const progressHTML = `<div class="text-indigo-400 text-[10px] font-black tracking-[3px] mb-2 uppercase">Nội dung ${index + 1} / ${userPollsQueue.length}</div>`;
+            
+            document.getElementById('u-title').innerHTML = progressHTML + poll.title;
+            
+            document.getElementById('u-options').innerHTML = poll.options.map((opt, i) => `
+                <button onclick="saveStepVote(${i}, '${opt}')" class="glass p-8 rounded-[30px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
+                    <span class="text-xl font-black uppercase italic group-hover:text-indigo-400">${opt}</span>
+                    <i class="fa-solid fa-circle-check opacity-20 group-hover:opacity-100 text-indigo-500"></i>
+                </button>`).join('');
+        }
+
+        async function saveStepVote(optionIdx, optionName) {
+            const poll = userPollsQueue[userCurrentIndex];
+            
+            // Gửi phiếu bầu cho mục này ngay lập tức
+            await rdb.ref(`s_votes/polls/${poll.id}/votes`).push(optionIdx);
+            
+            // Hiệu ứng chuyển cảnh
+            document.getElementById('u-options').style.opacity = '0';
+            document.getElementById('u-options').style.transform = 'translateX(50px)';
+            
+            setTimeout(() => {
+                document.getElementById('u-options').style.opacity = '1';
+                document.getElementById('u-options').style.transform = 'translateX(0)';
+                showPollStep(userCurrentIndex + 1);
+            }, 400);
+        }
+
+        function finishAllVotes() {
+            const overlay = document.getElementById('success-overlay');
+            overlay.style.display = 'flex';
+            overlay.innerHTML = `
+                <div class="relative mb-8">
+                    <div class="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full"></div>
+                    <div class="relative w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.4)]">
+                        <i class="fa-solid fa-check-double text-4xl text-white"></i>
+                    </div>
+                </div>
+                <h2 class="text-4xl font-black italic text-white uppercase tracking-tighter text-center">HOÀN THÀNH TẤT CẢ</h2>
+                <p class="text-emerald-400/80 font-bold uppercase tracking-[4px] mt-4 text-[10px] text-center">Bạn đã hoàn tất ${userPollsQueue.length} nội dung bình chọn</p>
+            `;
+            
+            confetti({
+                particleCount: 200,
+                spread: 100,
+                origin: { y: 0.6 }
+            });
+        }
+
 
 async function handleRestore(isRestore) {
     document.getElementById('restore-modal').style.display = 'none';
@@ -914,26 +1004,26 @@ async function handleRestore(isRestore) {
             const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
             const pollData = { title, options, ts: Date.now() };
 
+            // 1. Lưu nội dung poll
             await rdb.ref('s_votes/polls/' + pollId).set(pollData);
 
+            // 2. Thêm ID này vào danh sách "Sự kiện đang chạy" trên Firebase
+            await rdb.ref('s_votes/active_event_list').child(pollId).set(true);
+
+            // Lưu local như cũ để quản lý
             let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
             list.unshift(pollId);
-            
             localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
             localStorage.setItem('s_votes_active_id', pollId);
 
-            // SAU KHI LƯU XONG -> LOAD LÊN BÁO CÁO VÀ RESET FORM NHẬP
             loadPoll(pollId); 
             refreshPollList();
             
-            // Tự động xóa form sau khi lưu để admin soạn cái tiếp theo
             titleInput.value = "";
             document.getElementById('options-list').innerHTML = "";
-            addOptionField("Ứng viên A");
-            addOptionField("Ứng viên B");
+            addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
 
-            S_Notify.alert("Kích hoạt thành công! Dữ liệu đã được lưu vào danh sách.");
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            S_Notify.alert("Đã thêm vào sự kiện tổng hợp!");
         }
 
         function resetSystemHistory() {
@@ -1030,7 +1120,7 @@ async function loadPoll(id) {
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
 
-    const url = window.location.origin + window.location.pathname + "?room=" + id;
+    const url = window.location.origin + window.location.pathname + "?mode=event";
     lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
     
     const container = document.getElementById('qr-code');
@@ -1053,8 +1143,10 @@ async function loadPoll(id) {
 }
 
         function deletePoll(id) {
-            S_Notify.confirm(`Bạn có chắc chắn muốn xóa bình chọn này khỏi danh sách?`, () => {
-                // 1. Lọc bỏ ID khỏi danh sách trong LocalStorage
+            S_Notify.confirm(`Xóa mục này khỏi sự kiện tổng hợp?`, async () => {
+                // Xóa trên Firebase danh sách chạy
+                await rdb.ref('s_votes/active_event_list').child(id).remove();
+                
                 let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
                 list = list.filter(item => item !== id);
                 localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
