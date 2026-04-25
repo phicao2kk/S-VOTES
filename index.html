@@ -546,6 +546,65 @@ img[alt="S-VOTES Logo"]:hover {
     -webkit-text-fill-color: transparent;
 }
 
+/* Khung chứa biểu đồ cố định */
+.chart-frame {
+    position: relative;
+    height: 400px;
+    width: 90%;
+    margin: 40px auto;
+    border-left: 3px solid rgba(255, 255, 255, 0.8);
+    border-bottom: 3px solid rgba(255, 255, 255, 0.8);
+    /* Bỏ flex, dùng absolute cho các cột con */
+}
+
+/* Từng cột đơn lẻ - Quan trọng: Dùng absolute để di chuyển mượt */
+.column-item {
+    position: absolute;
+    bottom: 0;
+    width: 60px; /* Độ rộng cố định của cột */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    /* Hiệu ứng di chuyển ngang và đổi chiều cao */
+    transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), height 0.8s ease-out;
+}
+
+/* Thanh màu của cột */
+.column-bar {
+    width: 80%;
+    background: linear-gradient(to top, #4a90e2, #22d3ee);
+    border-radius: 8px 8px 0 0;
+    position: relative;
+    box-shadow: 0 4px 15px rgba(34, 211, 238, 0.3);
+    transition: height 0.8s cubic-bezier(0.17, 0.67, 0.83, 0.67);
+}
+
+/* Con số trên đỉnh */
+.column-votes {
+    position: absolute;
+    top: -30px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #22d3ee;
+    transition: all 0.3s;
+}
+
+/* Tên phương án bên dưới */
+.column-name {
+    position: absolute;
+    bottom: -35px;
+    font-size: 11px;
+    font-weight: 800;
+    color: white;
+    text-align: center;
+    width: 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+}
+
     </style>
 </head>
 <body>
@@ -1048,52 +1107,75 @@ function listenResults(id) {
 function renderBarChart() {
     if (!lastPollData) return;
 
-    const filterText = document.getElementById('table-filter').value.toLowerCase();
     const data = lastPollData;
+    const filterText = document.getElementById('table-filter').value.toLowerCase();
     
     const votes = data.votes ? Object.values(data.votes) : [];
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
-    // 1. Tạo mảng dữ liệu và SẮP XẾP cao nhất bên trái
+    // 1. Chuẩn bị dữ liệu và Sắp xếp
     let chartData = data.options.map((name, index) => ({
+        id: `opt-${index}`, // Định danh cố định cho mỗi cột
         name: name,
         votes: counts[index]
-    })).sort((a, b) => b.votes - a.votes);
+    })).sort((a, b) => b.votes - a.votes); // Thằng nhiều phiếu nhất lên đầu (bên trái)
 
-    // 2. LỌC dữ liệu theo ô nhập liệu
-    const filteredData = chartData.filter(item => 
-        item.name.toLowerCase().includes(filterText)
-    );
+    // 2. Lọc nếu có tìm kiếm
+    const filteredData = chartData.filter(item => item.name.toLowerCase().includes(filterText));
+    const maxVotes = Math.max(...filteredData.map(d => d.votes), 1);
 
-    // 3. Tìm số phiếu cao nhất trong nhóm đã lọc để tính chiều cao
-    const maxFilteredVotes = Math.max(...filteredData.map(d => d.votes), 1); 
-
-    // 4. Đổ dữ liệu vào khung biểu đồ
-    document.getElementById('empty-state').classList.add('hidden');
+    // 3. Chuẩn bị khung chứa nếu chưa có
     const container = document.getElementById('vote-bars');
     container.classList.remove('hidden');
+    document.getElementById('empty-state').classList.add('hidden');
 
-    container.innerHTML = `
-        <div class="chart-frame">
-            <div class="axis-label-y text-center text-[10px]">Số lượt<br>(Phiếu)</div>
-            <div class="axis-label-x text-[10px]">Phương án</div>
-            
-            ${filteredData.map((item, i) => {
-                // Tính % chiều cao (tối đa 90% để không đè mũi tên)
-                const heightPercent = (item.votes / maxFilteredVotes) * 90;
-                
-                return `
-                    <div class="column-item">
-                        <div class="column-bar" style="height: ${heightPercent}%">
-                            <span class="column-votes">${item.votes}</span>
-                        </div>
-                        <span class="column-name">${item.name}</span>
-                    </div>
-                `;
-            }).join('')}
-        </div>
-    `;
+    if (!container.querySelector('.chart-frame')) {
+        container.innerHTML = `
+            <div class="chart-frame">
+                <div class="axis-label-y text-center text-[10px]">SỐ PHIẾU</div>
+                <div class="axis-label-x text-[10px]">PHƯƠNG ÁN</div>
+            </div>`;
+    }
+    const frame = container.querySelector('.chart-frame');
+
+    // 4. Cập nhật hoặc Tạo mới từng cột
+    const frameWidth = frame.offsetWidth - 40;
+    const spacing = frameWidth / (filteredData.length || 1);
+
+    filteredData.forEach((item, index) => {
+        let colEl = document.getElementById(item.id);
+        
+        // Nếu cột chưa tồn tại, tạo mới
+        if (!colEl) {
+            colEl = document.createElement('div');
+            colEl.id = item.id;
+            colEl.className = 'column-item';
+            colEl.innerHTML = `
+                <div class="column-bar" style="height: 0%">
+                    <span class="column-votes">0</span>
+                </div>
+                <span class="column-name">${item.name}</span>
+            `;
+            frame.appendChild(colEl);
+        }
+
+        // TÍNH TOÁN VỊ TRÍ VÀ CHIỀU CAO
+        const xPos = index * spacing + (spacing / 2) - 30; // Căn giữa cột trong khoảng spacing
+        const hPercent = (item.votes / maxVotes) * 90;
+
+        // CẬP NHẬT GIAO DIỆN (MƯỢT MÀ NHỜ CSS TRANSITION)
+        colEl.style.transform = `translateX(${xPos}px)`;
+        const bar = colEl.querySelector('.column-bar');
+        bar.style.height = `${hPercent}%`;
+        colEl.querySelector('.column-votes').innerText = item.votes;
+    });
+
+    // 5. Xóa những cột không còn tồn tại (ví dụ khi reset hoặc lọc)
+    const currentIds = filteredData.map(d => d.id);
+    frame.querySelectorAll('.column-item').forEach(el => {
+        if (!currentIds.includes(el.id)) el.remove();
+    });
 }
 
 // Hàm này gắn vào sự kiện oninput của ô lọc
@@ -1170,12 +1252,12 @@ function filterTable() {
                 await new Promise(resolve => setTimeout(resolve, 100)); 
 
                 const canvas = await html2canvas(card, {
-                    scale: 3, 
+                    scale: 4, // Tăng độ nét lên mức 4
                     useCORS: true, 
-                    backgroundColor: "#ffffff", // Ép nền trắng để không bị lỗi trong suốt
-                    logging: false
+                    backgroundColor: "#ffffff", // Ép nền trắng tinh
+                    removeContainer: true
                 });
-
+                
                 // 4. Hiện lại tia laser cho giao diện web sau khi chụp xong
                 if(laser) laser.style.display = 'block';
 
