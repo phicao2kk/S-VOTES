@@ -580,6 +580,29 @@ img[alt="S-VOTES Logo"]:hover {
     text-transform: uppercase;
 }
 
+/* Khung bọc có thanh cuộn ngang */
+.chart-scroll-container {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 60px; /* Chừa chỗ cho tên ứng viên */
+    margin-top: 20px;
+    scroll-behavior: smooth;
+}
+
+/* Tùy chỉnh thanh cuộn cho Pro */
+.chart-scroll-container::-webkit-scrollbar {
+    height: 6px;
+}
+.chart-scroll-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+.chart-scroll-container::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.5);
+    border-radius: 10px;
+}
+
     </style>
 </head>
 <body>
@@ -975,6 +998,9 @@ async function loadPoll(id) {
     currentId = id;
     localStorage.setItem('s_votes_active_id', id);
 
+    // Xóa sạch biểu đồ cũ để vẽ lại khung cuộn mới
+    document.getElementById('vote-bars').innerHTML = ""; 
+
     const snap = await rdb.ref('s_votes/polls/' + id).once('value');
     const data = snap.val();
     if(!data) return;
@@ -1101,18 +1127,28 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // TẠO KHUNG TRỤC TỌA ĐỘ
-    if (!container.querySelector('.chart-frame')) {
+    // TẠO CẤU TRÚC KHUNG CUỘN
+    if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
-            <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid #fff; border-bottom:3px solid #fff; margin:50px auto; width:90%; overflow:visible;">
-                <div class="axis-label-y" style="color:#6366f1; font-weight:800; position:absolute; top:-40px; left:-10px; font-size:11px; font-style:italic; white-space:nowrap;">SỐ PHIẾU ▲</div>
-                <div class="axis-label-x" style="color:#6366f1; font-weight:800; position:absolute; bottom:-60px; right:-10px; font-size:11px; font-style:italic;">▶ PHƯƠNG ÁN</div>
+            <div class="chart-scroll-container">
+                <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid rgba(255,255,255,0.3); border-bottom:3px solid rgba(255,255,255,0.3); margin-left:20px; overflow:visible;">
+                    <div class="axis-label-y" style="color:#6366f1; font-weight:800; position:absolute; top:-40px; left:-10px; font-size:11px; font-style:italic; white-space:nowrap;">SỐ PHIẾU ▲</div>
+                    <div class="axis-label-x" style="color:#6366f1; font-weight:800; position:absolute; bottom:-60px; right:0; font-size:11px; font-style:italic;">▶ PHƯƠNG ÁN</div>
+                </div>
             </div>`;
     }
     
+    const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
-    const frameWidth = frame.clientWidth || 800;
-    const step = frameWidth / (chartData.length + 1); 
+    
+    // TÍNH ĐỘ RỘNG ĐỘNG: Mỗi cột 100px, tối thiểu là bằng độ rộng khung nhìn
+    const minColWidth = 100;
+    const itemsCount = chartData.length;
+    const neededWidth = (itemsCount + 1) * minColWidth;
+    const finalWidth = Math.max(scrollWin.clientWidth - 50, neededWidth);
+    
+    frame.style.width = finalWidth + "px";
+    const step = finalWidth / (itemsCount + 1);
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
     chartData.forEach((item, index) => {
@@ -1122,39 +1158,34 @@ function renderBarChart() {
             colEl = document.createElement('div');
             colEl.id = item.id;
             colEl.className = 'column-item';
-            // Khung bao quanh cột
             colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
-                <div class="column-bar" style="width:40px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); position:relative; box-shadow:0 10px 20px rgba(34, 211, 238, 0.4); display:block !important;">
+                <div class="column-bar" style="width:40px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.4); display:block !important;">
                     <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
                 </div>
-                <span class="column-name" style="position:absolute; bottom:-40px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; text-align:center;">${item.name}</span>
+                <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; text-align:center;">${item.name}</span>
             `;
             frame.appendChild(colEl);
-            void colEl.offsetHeight; // Force reflow
+            void colEl.offsetHeight;
         }
 
+        // Tính vị trí X dựa trên finalWidth đã giãn rộng
         const xPos = (index + 1) * step - 30;
-        // DÙNG PIXEL: Cao tối đa 300px thay vì dùng %
-        const hPx = Math.floor((item.votes / maxVotes) * 300); 
+        const hPx = Math.floor((item.votes / maxVotes) * 280); // Cao tối đa 280px cho thoáng
 
-        // Cập nhật vị trí ngang
         colEl.style.transform = `translateX(${xPos}px)`;
         
-        // Cập nhật chiều cao bằng Pixel sau 100ms
         setTimeout(() => {
             const bar = colEl.querySelector('.column-bar');
             const voteText = colEl.querySelector('.column-votes');
-            if (bar) bar.style.height = hPx + "px"; // DÙNG PX Ở ĐÂY
+            if (bar) bar.style.height = hPx + "px";
             if (voteText) voteText.innerText = item.votes;
         }, 100);
 
-        // Xử lý Filter
         colEl.style.display = item.name.toLowerCase().includes(filterText) ? "flex" : "none";
     });
 
-    // Dọn dẹp cột cũ
     frame.querySelectorAll('.column-item').forEach(el => {
         if (!chartData.find(d => d.id === el.id)) el.remove();
     });
