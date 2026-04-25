@@ -515,10 +515,10 @@ img[alt="S-VOTES Logo"]:hover {
 
 /* Đảm bảo danh sách không bị cắt viền khi cuộn */
 #active-polls-list {
-    max-height: 280px; /* Giới hạn chiều cao hiện khoảng 4 mục */
+    max-height: 210px !important; /* Hạ từ 280px xuống 210px để mục 3 bị đẩy xuống */
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 10px 5px; /* Thêm padding để không bị dính viền */
+    padding: 10px 5px;
     scroll-behavior: smooth;
 }
 
@@ -879,22 +879,28 @@ img[alt="S-VOTES Logo"]:hover {
             const statusEl = document.getElementById('u-title');
             statusEl.innerText = "ĐANG TẢI DỮ LIỆU...";
 
-            // Lấy danh sách các ID đang chạy
+            // Xóa sạch danh sách cũ trước khi nạp mới
+            userPollsQueue = []; 
+            userCurrentIndex = 0;
+
             const snap = await rdb.ref('s_votes/active_event_list').once('value');
             const activeIds = snap.val() ? Object.keys(snap.val()) : [];
 
             if (activeIds.length === 0) {
-                statusEl.innerHTML = `<span class="text-red-400">HIỆN KHÔNG CÓ BÌNH CHỌN NÀO ĐANG DIỄN RA</span>`;
-                document.getElementById('u-options').innerHTML = `<p class="text-center text-slate-500 uppercase text-[10px] tracking-widest">Vui lòng quay lại sau hoặc liên hệ Admin</p>`;
+                statusEl.innerHTML = `<span class="text-red-400 text-2xl">KHÔNG CÓ BÌNH CHỌN</span>`;
+                document.getElementById('u-options').innerHTML = `<p class="text-center text-slate-500 uppercase text-[10px] tracking-widest">Vui lòng đợi Admin kích hoạt sự kiện</p>`;
                 return;
             }
 
-            userPollsQueue = [];
+            // Nạp dữ liệu vào Queue
             for (let id of activeIds) {
                 const pSnap = await rdb.ref('s_votes/polls/' + id).once('value');
-                if (pSnap.val()) userPollsQueue.push({ id, ...pSnap.val() });
+                if (pSnap.val()) {
+                    userPollsQueue.push({ id, ...pSnap.val() });
+                }
             }
 
+            // Sau khi nạp xong mới bắt đầu hiện câu hỏi đầu tiên
             if (userPollsQueue.length > 0) {
                 showPollStep(0);
             }
@@ -1733,17 +1739,21 @@ function clearPollForm() {
 }
 
 function masterResetSystem() {
-    S_Notify.confirm("XÁC NHẬN: Hệ thống sẽ xóa sạch TOÀN BỘ danh sách đang chạy và làm trống Form. Bạn chắc chắn chứ?", () => {
-        // 1. Ngắt kết nối Firebase hiện tại để biểu đồ ngừng nhảy
+    S_Notify.confirm("XÁC NHẬN: Hệ thống sẽ xóa sạch TOÀN BỘ dữ liệu trên cả DATABASE và máy này. Bạn chắc chắn chứ?", async () => {
+        // 1. Ngắt kết nối Firebase hiện tại
         if (currentId) rdb.ref('s_votes/polls/' + currentId).off();
 
-        // 2. Lệnh "Hủy diệt": Xóa sạch LocalStorage (Danh sách, ID, Lịch sử bầu)
+        // 2. XÓA SẠCH TRÊN FIREBASE (Quan trọng nhất để User không bị thấy 12 mục)
+        await rdb.ref('s_votes/active_event_list').remove();
+        // Bạn có thể chọn xóa luôn cả node polls nếu muốn sạch hoàn toàn:
+        // await rdb.ref('s_votes/polls').remove();
+
+        // 3. Xóa LocalStorage trên máy Admin
         localStorage.clear();
 
-        // 3. Thông báo cho Admin biết đã xong
-        S_Notify.alert("Hệ thống đã được xóa sạch hoàn toàn!");
+        S_Notify.alert("Hệ thống đã được dọn sạch từ Database đến máy chủ!");
 
-        // 4. LOAD LẠI TRANG ĐỂ RESET GIAO DIỆN VỀ TRẮNG TINH
+        // 4. Load lại trang
         setTimeout(() => {
             location.reload();
         }, 800);
