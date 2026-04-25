@@ -974,33 +974,40 @@ img[alt="S-VOTES Logo"]:hover {
 }
 
 
-        // Hàm tải dữ liệu của một Poll cụ thể vào bảng báo cáo và QR
-        async function loadPoll(id) {
-            currentId = id;
-            localStorage.setItem('s_votes_active_id', id);
+// Hàm tải dữ liệu của một Poll cụ thể vào bảng báo cáo và QR
+async function loadPoll(id) {
+    if(!id) return; // Bảo vệ nếu id rỗng
+    currentId = id;
+    localStorage.setItem('s_votes_active_id', id);
 
-            // Lấy dữ liệu từ Firebase
-            const snap = await rdb.ref('s_votes/polls/' + id).once('value');
-            const data = snap.val();
-            if(!data) return;
+    // Lấy dữ liệu từ Firebase
+    const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+    const data = snap.val();
+    if(!data) return;
 
-            // Cập nhật tiêu đề và biểu đồ báo cáo
-            document.getElementById('display-title').innerText = data.title;
-            document.getElementById('live-indicator').classList.remove('hidden');
+    // Cập nhật tiêu đề và biểu đồ báo cáo
+    document.getElementById('display-title').innerText = data.title;
+    document.getElementById('live-indicator').classList.remove('hidden');
 
-            // Cập nhật mã QR tương ứng với ID này
-            const url = window.location.origin + window.location.pathname + "?room=" + id;
-            lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
-            document.getElementById('qr-code').innerHTML = `<img src="${lastQR}" crossOrigin="anonymous" class="w-56 h-56 object-contain">`;
-            document.getElementById('qr-section').classList.remove('hidden');
-            document.getElementById('qr-section').classList.add('flex');
+    // HIỂN THỊ KHUNG QR TRƯỚC (Để tạo không gian cho ảnh)
+    const qrSection = document.getElementById('qr-section');
+    qrSection.classList.remove('hidden');
+    qrSection.classList.add('flex');
 
-            // Bắt đầu lắng nghe kết quả real-time cho ID này
-            listenResults(id);
-            
-            // Cập nhật giao diện danh sách (để biết đang xem cái nào)
-            refreshPollList();
-        }
+    // Cập nhật mã QR tương ứng với ID này
+    const url = window.location.origin + window.location.pathname + "?room=" + id;
+    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+    
+    // Thêm style display:block để ép ảnh hiện ra ngay lập tức khi tải xong
+    document.getElementById('qr-code').innerHTML = 
+        `<img src="${lastQR}" crossOrigin="anonymous" class="w-56 h-56 object-contain" style="display: block; margin: 0 auto;">`;
+
+    // Bắt đầu lắng nghe kết quả real-time cho ID này
+    listenResults(id);
+    
+    // Cập nhật giao diện danh sách (để biết đang xem cái nào)
+    refreshPollList();
+}
 
         function deletePoll(id) {
             S_Notify.confirm(`Bạn có chắc chắn muốn xóa bình chọn này khỏi danh sách?`, () => {
@@ -1087,9 +1094,9 @@ function renderBarChart() {
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
-    // 1. Chuẩn bị dữ liệu và Sắp xếp từ cao xuống thấp
+    // 1. Chuẩn bị dữ liệu và Sắp xếp (Dữ liệu này dùng để xác định vị trí X)
     let chartData = data.options.map((name, index) => ({
-        id: `col-opt-${index}`, 
+        id: `col-opt-${index}`, // ID gắn chết với phương án ban đầu
         name: name,
         votes: counts[index]
     })).sort((a, b) => b.votes - a.votes);
@@ -1099,28 +1106,27 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // Tạo khung trục tọa độ nếu chưa có
+    // Tạo khung trục tọa độ nếu chưa có (Chỉ chạy 1 lần duy nhất)
     if (!container.querySelector('.chart-frame')) {
         container.innerHTML = `
             <div class="chart-frame">
-                <div class="axis-label-y">SỐ PHIẾU ▲</div>
-                <div class="axis-label-x">▶ PHƯƠNG ÁN</div>
+                <div class="axis-label-y text-indigo-400 font-black italic">SỐ PHIẾU ▲</div>
+                <div class="axis-label-x text-indigo-400 font-black italic">▶ PHƯƠNG ÁN</div>
             </div>`;
     }
     const frame = container.querySelector('.chart-frame');
 
-    // 3. Tính toán khoảng cách dàn hàng ngang
+    // 3. Tính toán thông số khung hình
     const frameWidth = frame.clientWidth;
     const itemsCount = chartData.length;
-    // Chia đều chiều ngang trục Ox cho số lượng cột
     const step = frameWidth / (itemsCount + 1); 
-
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
+    // 4. Vòng lặp cập nhật từng cột
     chartData.forEach((item, index) => {
         let colEl = document.getElementById(item.id);
         
-        // Nếu chưa có cột thì tạo mới
+        // Nếu cột chưa tồn tại (ví dụ vừa thêm phương án mới), tạo mới nó ở trạng thái 0
         if (!colEl) {
             colEl = document.createElement('div');
             colEl.id = item.id;
@@ -1134,17 +1140,25 @@ function renderBarChart() {
             frame.appendChild(colEl);
         }
 
-        // TÍNH TOÁN VỊ TRÍ VÀ CHIỀU CAO MỚI
-        const xPos = (index + 1) * step - 30; // Dịch về tâm cột (60px/2 = 30)
-        const hPercent = (item.votes / maxVotes) * 90;
+        // TÍNH TOÁN TỌA ĐỘ VÀ CHIỀU CAO
+        const xPos = (index + 1) * step - 30; // 30 là nửa chiều rộng cột 60px
+        const hPercent = (item.votes / maxVotes) * 85; // Tối đa 85% chiều cao khung
 
-        // CẬP NHẬT (Mượt mà nhờ CSS Transition)
-        colEl.style.transform = `translateX(${xPos}px)`;
-        const bar = colEl.querySelector('.column-bar');
-        bar.style.height = `${hPercent}%`;
-        colEl.querySelector('.column-votes').innerText = item.votes;
+        // BÍ QUYẾT: Dùng requestAnimationFrame để ép trình duyệt nhận diện Transition
+        requestAnimationFrame(() => {
+            // Di chuyển ngang mượt mà (dựa vào CSS transition: transform)
+            colEl.style.transform = `translateX(${xPos}px)`;
+            
+            // Kéo dài cột mượt mà (dựa vào CSS transition: height)
+            const bar = colEl.querySelector('.column-bar');
+            if (bar) bar.style.height = `${hPercent}%`;
+            
+            // Cập nhật số liệu trên đỉnh
+            const voteText = colEl.querySelector('.column-votes');
+            if (voteText) voteText.innerText = item.votes;
+        });
         
-        // Ẩn cột nếu người dùng đang gõ lọc mà không khớp
+        // Xử lý Lọc dữ liệu (Filter)
         if (item.name.toLowerCase().includes(filterText)) {
             colEl.style.opacity = "1";
             colEl.style.visibility = "visible";
@@ -1154,7 +1168,7 @@ function renderBarChart() {
         }
     });
 
-    // Xóa cột cũ nếu dữ liệu thay đổi hoàn toàn
+    // 5. Dọn dẹp: Nếu phương án bị xóa ở Setup, hãy xóa cột tương ứng trên biểu đồ
     const currentIds = chartData.map(d => d.id);
     frame.querySelectorAll('.column-item').forEach(el => {
         if (!currentIds.includes(el.id)) el.remove();
