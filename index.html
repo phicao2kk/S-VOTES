@@ -802,32 +802,27 @@ img[alt="S-VOTES Logo"]:hover {
                 document.getElementById('restore-modal').style.display = 'none';
                 
                 if (isRestore) {
-                    // --- LOGIC KHÔI PHỤC ---
-                    // 1. Lấy dữ liệu từ Firebase cho Poll đang active
                     const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
                     if(snap.exists()) {
                         const data = snap.val();
-                        
-                        // Đổ lại dữ liệu vào các ô nhập liệu (Logic cũ của bạn)
                         document.getElementById('vote-title').value = data.title;
                         document.getElementById('options-list').innerHTML = "";
                         data.options.forEach(opt => addOptionField(opt));
 
-                        // 2. Tải lại báo cáo, QR và khởi động lắng nghe Real-time
+                        // Tải lại báo cáo
                         loadPoll(currentId); 
-
-                        // 3. Khôi phục lại toàn bộ DANH SÁCH cũ bên trái
                         refreshPollList();
                         
-                        S_Notify.alert("Đã khôi phục toàn bộ danh sách bình chọn");
+                        // ÉP BIỂU ĐỒ VẼ LẠI SAU KHI MODAL ĐÓNG
+                        setTimeout(() => {
+                            if (typeof renderBarChart === 'function') renderBarChart();
+                        }, 500);
+
+                        S_Notify.alert("Đã khôi phục dữ liệu");
                     }
                 } else {
-                    // --- LOGIC BẮT ĐẦU MỚI ---
-                    // Xóa sạch cả ID đang chạy và toàn bộ Danh sách lịch sử trong máy
                     localStorage.removeItem('s_votes_active_id');
                     localStorage.removeItem('s_votes_all_ids');
-                    
-                    // Tải lại trang để giao diện trắng tinh khôi, sẵn sàng cho sự kiện mới
                     location.reload();
                 }
             }
