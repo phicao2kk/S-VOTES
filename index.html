@@ -798,6 +798,15 @@ img[alt="S-VOTES Logo"]:hover {
         </button>
     </div>
 
+    <!-- THANH BĂNG CỐ ĐỊNH DƯỚI ĐÁY MÀN HÌNH -->
+<div class="fixed bottom-0 left-0 right-0 bg-[#030712]/95 backdrop-blur-md border-t border-white/5 py-2.5 z-[100]">
+    <p class="text-[9px] text-slate-500 uppercase tracking-[2px] text-center flex items-center justify-center gap-2">
+        <span>© 2026</span> 
+        <span class="w-[1px] h-2 bg-white/10"></span> 
+        <span>Thiết kế bởi <b class="text-indigo-400 font-extrabold">Cao Nguyễn Hồng Phi</b></span>
+    </p>
+</div>
+
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyDWqkvbs8Ce5bhH3FYWgdRKQ0t3KXKQY3Q",
@@ -1574,6 +1583,44 @@ function masterResetSystem() {
         }, 800);
     });
 }
+
+// --- HỆ THỐNG PHÒNG THỦ THÔNG MINH (CHẶN F12, CHO ZOOM) ---
+
+window.addEventListener('keydown', (e) => {
+    // 1. Danh sách phím cấm (F12, Ctrl+Shift+I, J, C, Ctrl+U)
+    const isForbiddenKey = 
+        e.key === 'F12' || 
+        (e.ctrlKey && e.shiftKey && (e.key.toUpperCase() === 'I' || e.key.toUpperCase() === 'J' || e.key.toUpperCase() === 'C')) || 
+        (e.ctrlKey && e.key.toLowerCase() === 'u');
+
+    if (isForbiddenKey) {
+        e.preventDefault();
+        window.location.href = 'about:blank';
+        return;
+    }
+
+    // 2. CHO PHÉP ZOOM (Ctrl + '+', '-', '0')
+    // Nếu là các phím này thì thoát hàm, không xử lý gì thêm
+    if (e.ctrlKey && (e.key === '=' || e.key === '-' || e.key === '+' || e.key === '0')) {
+        return; 
+    }
+});
+
+// 3. Chặn chuột phải (Không cho Inspect Element)
+window.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+});
+
+// 4. Bẫy Debugger: Phát hiện mở DevTools bằng Menu trình duyệt
+// Nếu DevTools được mở, lệnh debugger sẽ dừng code > 100ms và kích hoạt sút ra ngoài
+setInterval(() => {
+    const start = performance.now();
+    debugger; 
+    const end = performance.now();
+    if (end - start > 100) {
+        window.location.href = 'about:blank';
+    }
+}, 1000);
 
     </script>
 
