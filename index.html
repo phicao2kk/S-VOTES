@@ -798,34 +798,32 @@ img[alt="S-VOTES Logo"]:hover {
             }
         };
 
-            async function handleRestore(isRestore) {
-                document.getElementById('restore-modal').style.display = 'none';
-                
-                if (isRestore) {
-                    const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
-                    if(snap.exists()) {
-                        const data = snap.val();
-                        document.getElementById('vote-title').value = data.title;
-                        document.getElementById('options-list').innerHTML = "";
-                        data.options.forEach(opt => addOptionField(opt));
+async function handleRestore(isRestore) {
+    document.getElementById('restore-modal').style.display = 'none';
+    
+    if (isRestore) {
+        const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
+        if(snap.exists()) {
+            const data = snap.val();
+            document.getElementById('vote-title').value = data.title;
+            document.getElementById('options-list').innerHTML = "";
+            data.options.forEach(opt => addOptionField(opt));
 
-                        // Tải lại báo cáo
-                        loadPoll(currentId); 
-                        refreshPollList();
-                        
-                        // ÉP BIỂU ĐỒ VẼ LẠI SAU KHI MODAL ĐÓNG
-                        setTimeout(() => {
-                            if (typeof renderBarChart === 'function') renderBarChart();
-                        }, 500);
+            loadPoll(currentId); 
+            refreshPollList();
+            
+            // CHỜ 1 GIÂY CHO CHẮC CÚ
+            setTimeout(() => {
+                renderBarChart();
+            }, 1000);
 
-                        S_Notify.alert("Đã khôi phục dữ liệu");
-                    }
-                } else {
-                    localStorage.removeItem('s_votes_active_id');
-                    localStorage.removeItem('s_votes_all_ids');
-                    location.reload();
-                }
-            }
+            S_Notify.alert("Đã khôi phục phiên làm việc!");
+        }
+    } else {
+        localStorage.clear();
+        location.reload();
+    }
+}
 
 
         function addOptionField(v = "") {
@@ -984,23 +982,24 @@ async function loadPoll(id) {
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
-    // 1. HIỆN KHUNG TRƯỚC
+    // HIỆN KHUNG QR TRƯỚC
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
 
-    // 2. LOAD ẢNH VÀO BỘ NHỚ TRƯỚC KHI ĐẨY RA GIAO DIỆN
     const url = window.location.origin + window.location.pathname + "?room=" + id;
     const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
     
+    const container = document.getElementById('qr-code');
+    container.innerHTML = ""; // Xóa trắng
+    
+    // Dùng object Image để đảm bảo load xong mới nạp vào DOM
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = qrImageUrl;
-    img.className = "w-56 h-56 object-contain";
+    img.className = "w-56 h-56 object-contain shadow-2xl rounded-xl";
     img.onload = () => {
-        const container = document.getElementById('qr-code');
-        container.innerHTML = ""; // Xóa trắng cũ
-        container.appendChild(img); // Đưa ảnh đã load xong vào
+        container.appendChild(img);
     };
 
     listenResults(id);
@@ -1102,16 +1101,18 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
+    // TẠO KHUNG TRỤC TỌA ĐỘ
     if (!container.querySelector('.chart-frame')) {
         container.innerHTML = `
-            <div class="chart-frame" style="position:relative; height:350px; border-left:2px solid #fff; border-bottom:2px solid #fff; margin:50px auto; width:90%; overflow:visible;">
-                <div class="axis-label-y" style="color:#6366f1; font-weight:bold; position:absolute; top:-30px; left:-10px; font-size:10px;">SỐ PHIẾU ▲</div>
-                <div class="axis-label-x" style="color:#6366f1; font-weight:bold; position:absolute; bottom:-50px; right:0; font-size:10px;">▶ PHƯƠNG ÁN</div>
+            <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid #fff; border-bottom:3px solid #fff; margin:50px auto; width:90%; overflow:visible;">
+                <div class="axis-label-y" style="color:#6366f1; font-weight:800; position:absolute; top:-40px; left:-10px; font-size:11px; font-style:italic; white-space:nowrap;">SỐ PHIẾU ▲</div>
+                <div class="axis-label-x" style="color:#6366f1; font-weight:800; position:absolute; bottom:-60px; right:-10px; font-size:11px; font-style:italic;">▶ PHƯƠNG ÁN</div>
             </div>`;
     }
     
     const frame = container.querySelector('.chart-frame');
-    const step = frame.clientWidth / (chartData.length + 1); 
+    const frameWidth = frame.clientWidth || 800;
+    const step = frameWidth / (chartData.length + 1); 
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
     chartData.forEach((item, index) => {
@@ -1121,55 +1122,41 @@ function renderBarChart() {
             colEl = document.createElement('div');
             colEl.id = item.id;
             colEl.className = 'column-item';
-            colEl.style.position = 'absolute';
-            colEl.style.bottom = '0';
-            colEl.style.width = '60px';
-            colEl.style.display = 'flex';
-            colEl.style.flexDirection = 'column';
-            colEl.style.alignItems = 'center';
-            colEl.style.transition = 'transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+            // Khung bao quanh cột
+            colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
-                <div class="column-bar" style="
-                    width: 40px; 
-                    background: linear-gradient(to top, #3b82f6, #22d3ee); 
-                    border-radius: 6px 6px 0 0; 
-                    height: 0px; 
-                    transition: height 1s ease-out;
-                    position: relative;
-                    box-shadow: 0 0 15px rgba(34, 211, 238, 0.3);
-                    display: block !important;
-                ">
-                    <span class="column-votes" style="position:absolute; top:-25px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:14px;">0</span>
+                <div class="column-bar" style="width:40px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); position:relative; box-shadow:0 10px 20px rgba(34, 211, 238, 0.4); display:block !important;">
+                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
                 </div>
-                <span class="column-name" style="position:absolute; bottom:-30px; white-space:nowrap; color:white; font-size:11px; font-weight:bold; text-transform:uppercase;">${item.name}</span>
+                <span class="column-name" style="position:absolute; bottom:-40px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; text-align:center;">${item.name}</span>
             `;
             frame.appendChild(colEl);
-            // ÉP TRÌNH DUYỆT GHI NHẬN HEIGHT: 0
-            void colEl.offsetHeight; 
+            void colEl.offsetHeight; // Force reflow
         }
 
         const xPos = (index + 1) * step - 30;
-        const hPercent = (item.votes / maxVotes) * 85; 
+        // DÙNG PIXEL: Cao tối đa 300px thay vì dùng %
+        const hPx = Math.floor((item.votes / maxVotes) * 300); 
 
         // Cập nhật vị trí ngang
         colEl.style.transform = `translateX(${xPos}px)`;
         
-        // Dùng setTimeout để tách lệnh gán height ra khỏi luồng tạo Element
+        // Cập nhật chiều cao bằng Pixel sau 100ms
         setTimeout(() => {
             const bar = colEl.querySelector('.column-bar');
             const voteText = colEl.querySelector('.column-votes');
-            if (bar) bar.style.height = hPercent + "%";
+            if (bar) bar.style.height = hPx + "px"; // DÙNG PX Ở ĐÂY
             if (voteText) voteText.innerText = item.votes;
-        }, 50);
+        }, 100);
 
+        // Xử lý Filter
         colEl.style.display = item.name.toLowerCase().includes(filterText) ? "flex" : "none";
     });
 
     // Dọn dẹp cột cũ
-    const currentIds = chartData.map(d => d.id);
     frame.querySelectorAll('.column-item').forEach(el => {
-        if (!currentIds.includes(el.id)) el.remove();
+        if (!chartData.find(d => d.id === el.id)) el.remove();
     });
 }
 
