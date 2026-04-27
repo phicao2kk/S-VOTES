@@ -989,11 +989,11 @@ function showPollStep(index) {
 
     // NẾU BỊ KHÓA
     if (poll.isLocked) {
-        titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">NỘI DUNG TẠM ĐÓNG</span><br>${poll.title}`;
+        titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">BÌNH CHỌN ĐÃ BỊ KHÓA</span><br>${poll.title}`;
         optionsContainer.innerHTML = `
             <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-4">
                 <i class="fa-solid fa-lock text-4xl text-slate-700 animate-pulse"></i>
-                <button onclick="showPollStep(${index + 1})" class="w-full py-4 bg-white/5 rounded-2xl text-slate-400 uppercase text-[10px]">Bỏ qua mục này</button>
+                <button onclick="showPollStep(${index + 1})" class="w-full py-4 bg-white/5 rounded-2xl text-slate-400 uppercase text-[10px]">Thoát</button>
             </div>`;
         return;
     }
