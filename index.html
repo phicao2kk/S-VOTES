@@ -977,46 +977,62 @@ function showPollStep(index) {
     }
 
     userCurrentIndex = index;
-    const poll = userPollsQueue[index];
-    if (!poll) return;
-
-    currentId = poll.id; // THÊM DÒNG NÀY để luôn cập nhật ID hiện tại
-
-    // Cập nhật thanh tiến trình
-    const progress = ((index + 1) / userPollsQueue.length) * 100;
-    document.getElementById('user-progress-bar').style.width = progress + '%';
+    const pollBase = userPollsQueue[index];
+    
+    // Ngắt kết nối cũ nếu có
+    if (currentId) rdb.ref('s_votes/polls/' + currentId).off();
+    currentId = pollBase.id;
 
     const titleEl = document.getElementById('u-title');
     const optionsContainer = document.getElementById('u-options');
+    const progressBar = document.getElementById('user-progress-bar');
 
-    // NẾU BỊ KHÓA
-    if (poll.isLocked) {
-        titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">BÌNH CHỌN TẠM ĐÓNG</span><br>${poll.title}`;
-        
-        // Kiểm tra xem đây có phải là mục cuối cùng trong danh sách không
-        const isLast = (index + 1 >= userPollsQueue.length);
+    // LẮNG NGHE REAL-TIME CHO POLL NÀY
+    rdb.ref('s_votes/polls/' + currentId).on('value', (snap) => {
+        const poll = snap.val();
+        if (!poll) return;
 
-        optionsContainer.innerHTML = `
-            <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-6">
-                <i class="fa-solid fa-lock text-5xl text-slate-700 animate-pulse"></i>
-                <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[2px]">Nội dung này hiện đang khóa cổng bình chọn</p>
-                
-                <button onclick="${isLast ? 'location.reload()' : `showPollStep(${index + 1})`}" 
-                        class="w-full py-4 ${isLast ? 'bg-white/5 text-slate-400' : 'bg-indigo-600 text-white'} rounded-2xl font-black uppercase text-[10px] tracking-[2px]">
-                    ${isLast ? 'THOÁT HỆ THỐNG' : 'XEM NỘI DUNG TIẾP THEO'}
-                </button>
-            </div>`;
-        return;
-    }
+        // Cập nhật thanh tiến trình
+        const progress = ((index + 1) / userPollsQueue.length) * 100;
+        progressBar.style.width = progress + '%';
 
-    // HIỂN THỊ PHƯƠNG ÁN
-    titleEl.innerHTML = `<span class="block text-indigo-400 text-[10px] tracking-[4px] mb-2 font-black">NỘI DUNG ${index + 1}/${userPollsQueue.length}</span>${poll.title}`;
-    optionsContainer.innerHTML = poll.options.map((opt, i) => `
-        <button onclick="confirmVote(${i}, '${opt}')" 
-                class="glass p-6 rounded-[28px] text-left border border-white/5 flex justify-between items-center group active:scale-95 transition-all">
-            <span class="text-lg font-bold uppercase italic group-hover:text-indigo-400">${opt}</span>
-            <i class="fa-solid fa-chevron-right text-slate-600"></i>
-        </button>`).join('');
+        if (poll.isLocked) {
+            // GIAO DIỆN KHI BỊ KHÓA (Tự động hiện khi Admin bấm Khóa)
+            titleEl.innerHTML = `<span class="block text-amber-500 text-[10px] tracking-[4px] mb-2 font-black">NỘI DUNG ĐANG TẠM KHÓA</span>${poll.title}`;
+            
+            const isLast = (index + 1 >= userPollsQueue.length);
+            optionsContainer.innerHTML = `
+                <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-6 animate-in fade-in duration-500">
+                    <div class="relative inline-block">
+                        <div class="absolute inset-0 bg-amber-500/20 blur-2xl rounded-full"></div>
+                        <i class="fa-solid fa-lock text-5xl text-amber-500 relative"></i>
+                    </div>
+                    <p class="text-slate-400 text-[10px] font-bold uppercase tracking-[2px]">Cổng bình chọn này hiện đang đóng.<br>Vui lòng đợi ban tổ chức hoặc chuyển sang mục tiếp theo.</p>
+                    
+                    <div class="flex flex-col gap-3">
+                        ${!isLast ? `
+                        <button onclick="showPollStep(${index + 1})" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-[2px] shadow-lg shadow-indigo-500/20">
+                            XEM NỘI DUNG TIẾP THEO <i class="fa-solid fa-arrow-right ml-2"></i>
+                        </button>` : ''}
+                        
+                        <button onclick="goBackToMain()" class="w-full py-4 bg-white/5 text-slate-500 rounded-2xl font-black uppercase text-[10px] tracking-[2px] hover:text-white transition-all">
+                            THOÁT HỆ THỐNG
+                        </button>
+                    </div>
+                </div>`;
+        } else {
+            // GIAO DIỆN KHI MỞ (Tự động hiện khi Admin bấm Mở)
+            titleEl.innerHTML = `<span class="block text-indigo-400 text-[10px] tracking-[4px] mb-2 font-black">NỘI DUNG ${index + 1}/${userPollsQueue.length}</span>${poll.title}`;
+            
+            optionsContainer.innerHTML = poll.options.map((opt, i) => `
+                <button onclick="confirmVote(${i}, '${opt}')" 
+                        class="glass p-6 rounded-[28px] text-left border border-white/5 flex justify-between items-center group active:scale-95 transition-all animate-in slide-in-from-bottom-2 duration-300" 
+                        style="animation-delay: ${i * 50}ms">
+                    <span class="text-lg font-bold uppercase italic group-hover:text-indigo-400 transition-colors">${opt}</span>
+                    <i class="fa-solid fa-chevron-right text-slate-600 group-hover:text-indigo-400 transition-all group-hover:translate-x-1"></i>
+                </button>`).join('');
+        }
+    });
 }
 
 
@@ -1042,13 +1058,36 @@ async function saveStepVote(optionIdx, optionName) {
     }
 }
 
+// Hàm để quay về màn hình chính mà không reload trang
+function goBackToMain() {
+    // Ẩn tất cả overlay và view người dùng
+    document.getElementById('success-overlay').style.display = 'none';
+    document.getElementById('view-user').classList.add('hidden');
+    
+    // Hiện lại dashboard admin
+    document.getElementById('view-admin').classList.remove('hidden');
+    
+    // Reset các biến trạng thái bình chọn của user
+    userCurrentIndex = 0;
+    sessionVotes = 0;
+    
+    // Nếu có đang lắng nghe poll nào ở chế độ user thì tắt đi
+    if (currentId) {
+        rdb.ref('s_votes/polls/' + currentId).off();
+    }
+    
+    // Cập nhật lại danh sách poll
+    refreshPollList();
+}
+
+// Cập nhật lại hàm kết thúc để dùng hàm quay lại mới
 function finishAllVotes() {
     const overlay = document.getElementById('success-overlay');
     overlay.style.display = 'flex';
     
+    let contentHtml = "";
     if (sessionVotes > 0) {
-        // Trường hợp có bình chọn ít nhất 1 mục
-        overlay.innerHTML = `
+        contentHtml = `
             <div class="relative mb-8">
                 <div class="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full"></div>
                 <div class="relative w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.4)]">
@@ -1057,20 +1096,22 @@ function finishAllVotes() {
             </div>
             <h2 class="text-4xl font-black italic text-white uppercase tracking-tighter text-center">HOÀN THÀNH</h2>
             <p class="text-emerald-400/80 font-bold uppercase tracking-[4px] mt-4 text-[10px] text-center">Bạn đã hoàn tất ${sessionVotes}/${userPollsQueue.length} nội dung</p>
-            <button onclick="location.reload()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase text-slate-400">Quay lại</button>
+            <button onclick="goBackToMain()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all">
+                Quay lại trang chủ
+            </button>
         `;
         confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
     } else {
-        // Trường hợp không bình chọn được mục nào (tất cả đều bị khóa hoặc bỏ qua)
-        overlay.innerHTML = `
+        contentHtml = `
             <div class="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center mb-8">
                 <i class="fa-solid fa-circle-info text-3xl text-amber-500"></i>
             </div>
             <h2 class="text-2xl font-black italic text-white uppercase tracking-tighter text-center">KHÔNG CÓ DỮ LIỆU MỚI</h2>
             <p class="text-slate-400 font-bold uppercase tracking-[2px] mt-4 text-[10px] text-center">Các nội dung bình chọn đang đóng hoặc bạn đã thực hiện trước đó.</p>
-            <button onclick="location.reload()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase text-slate-400">Quay lại</button>
+            <button onclick="goBackToMain()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase text-slate-400 hover:text-white transition-all">Quay lại trang chủ</button>
         `;
     }
+    overlay.innerHTML = contentHtml;
 }
 
 
