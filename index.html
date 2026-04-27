@@ -634,9 +634,42 @@ input {
     color: white !important;
 }
 
+/* Tùy chỉnh đèn báo trạng thái tích hợp */
+#live-indicator {
+    transition: all 0.3s ease;
+    min-width: 130px;
+    justify-content: center;
+}
+
+/* Style khi mất kết nối */
+#live-indicator.offline {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.2);
+}
+#live-indicator.offline span span {
+    background-color: #ef4444; /* Đèn đỏ */
+}
+#live-indicator.offline span.text-status {
+    color: #ef4444;
+}
+
+/* Chữ nổi khi có dữ liệu (Fix yêu cầu chữ nổi khi khôi phục) */
+input.opt {
+    color: white !important;
+    font-weight: 800 !important;
+}
+input.opt::placeholder {
+    color: rgba(255,255,255,0.2) !important;
+    font-weight: 400 !important;
+}
+
     </style>
 </head>
 <body>
+        <span class="w-2 h-2 rounded-full bg-current animate-pulse"></span>
+        Hệ thống Online
+    </div>
+
     <div class="mesh-bg"></div>
 
     <!-- QR ZOOM OVERLAY -->
@@ -666,7 +699,8 @@ input {
                 <span class="animate-ping absolute h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span class="text-[10px] font-black text-emerald-400 uppercase tracking-widest">HỆ THỐNG LIVE</span>
+            <!-- Thêm class text-status vào đây -->
+            <span class="text-[10px] font-black text-emerald-400 uppercase tracking-widest text-status">HỆ THỐNG LIVE</span>
         </div>
     </nav>
 
@@ -687,6 +721,12 @@ input {
                                 XÓA TẤT CẢ
                             </button>
                         </div>
+
+                        <!-- NÚT KHÓA ĐẶT TẠI ĐÂY -->
+                        <button id="btn-lock-toggle" onclick="toggleLockPoll()" class="hidden w-full py-3 mb-4 rounded-2xl border border-white/10 bg-white/5 text-slate-400 font-black uppercase text-[9px] tracking-[2px] transition-all hover:bg-amber-500/10 hover:text-amber-500 hover:border-amber-500/50">
+                            <i class="fa-solid fa-lock-open mr-2"></i> TRẠNG THÁI: ĐANG MỞ
+                        </button>
+
                         <div id="active-polls-list" class="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                             <p class="text-[10px] text-slate-500 italic">Chưa có bình chọn nào...</p>
                         </div>
@@ -864,6 +904,7 @@ input {
         firebase.initializeApp(firebaseConfig);
         const rdb = firebase.database();
 
+        let editingPollId = null; // Biến lưu ID đang sửa
         let currentId = null;
         let lastQR = "";
 
@@ -893,114 +934,130 @@ input {
         let userCurrentIndex = 0;
         let userAnswers = {};
 
-        async function renderEventPoll() {
-            // KIỂM TRA: Nếu máy này đã hoàn thành Event trước đó
-            if(localStorage.getItem('event_completed')) {
-                document.getElementById('success-overlay').style.display = 'flex';
-                return;
-            }
-            document.getElementById('view-admin').classList.add('hidden');
-            document.getElementById('view-user').classList.remove('hidden');
+async function renderEventPoll() {
+    document.getElementById('view-admin').classList.add('hidden');
+    document.getElementById('view-user').classList.remove('hidden');
 
-            const statusEl = document.getElementById('u-title');
-            statusEl.innerText = "ĐANG TẢI...";
+    const statusEl = document.getElementById('u-title');
+    statusEl.innerText = "ĐANG TẢI...";
 
-            userPollsQueue = []; 
-            userCurrentIndex = 0;
+    // 1. Lấy danh sách các ID đang chạy thực tế từ Firebase
+    const snap = await rdb.ref('s_votes/active_event_list').once('value');
+    const activeIds = snap.val() ? Object.keys(snap.val()) : [];
 
-            const snap = await rdb.ref('s_votes/active_event_list').once('value');
-            const activeIds = snap.val() ? Object.keys(snap.val()) : [];
+    if (activeIds.length === 0) {
+        statusEl.innerHTML = `<span class="text-red-400">HỆ THỐNG TRỐNG</span>`;
+        return;
+    }
 
-            if (activeIds.length === 0) {
-                statusEl.innerHTML = `<span class="text-red-400">HỆ THỐNG TRỐNG</span>`;
-                return;
-            }
+    // 2. Tải dữ liệu chi tiết của tất cả các poll
+    const pSnaps = await Promise.all(activeIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
+    const allPolls = pSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
 
-            // Tải dữ liệu các poll
-            const pSnaps = await Promise.all(activeIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
-            userPollsQueue = pSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
+    // 3. LOGIC LỌC MỚI: Chỉ hiện những câu máy này CHƯA VOTE hoặc CÓ VERSION MỚI HƠN
+    userPollsQueue = allPolls.filter(p => {
+        const localVer = localStorage.getItem('voted_' + p.id);
+        // Cho phép bầu nếu: chưa có dấu vết bầu OR (version máy < version server)
+        return !localVer || parseInt(localVer) < (p.v || 1);
+    });
 
-            // BẮT BUỘC SẮP XẾP: Để mục 1 hiện đầu tiên trên điện thoại
-            userPollsQueue.sort((a, b) => a.ts - b.ts);
+    // 4. Sắp xếp theo thời gian tạo
+    userPollsQueue.sort((a, b) => a.ts - b.ts);
 
-            if (userPollsQueue.length > 0) {
-                showPollStep(0);
-            }
-        }
+    // 5. Kiểm tra kết quả lọc
+    if (userPollsQueue.length > 0) {
+        showPollStep(0);
+    } else {
+        document.getElementById('success-overlay').style.display = 'flex';
+    }
+}
 
         function showPollStep(index) {
-            // Nếu hết câu hỏi thì hiện màn hình kết thúc
-            if (index >= userPollsQueue.length) {
+    // 1. KIỂM TRA KẾT THÚC: Nếu hết câu hỏi thì hiện màn hình hoàn thành
+    if (index >= userPollsQueue.length) {
+        finishAllVotes();
+        return;
+    }
+
+    userCurrentIndex = index;
+    const poll = userPollsQueue[index];
+    if (!poll) return;
+
+    // 2. CẬP NHẬT THANH TIẾN TRÌNH
+    const progress = ((index + 1) / userPollsQueue.length) * 100;
+    const progressBar = document.getElementById('user-progress-bar');
+    if (progressBar) progressBar.style.width = progress + '%';
+
+    const titleEl = document.getElementById('u-title');
+    const optionsContainer = document.getElementById('u-options');
+
+    // 3. LOGIC KIỂM TRA KHÓA (LOCK)
+    if (poll.isLocked) {
+        titleEl.style.opacity = "0";
+        optionsContainer.style.opacity = "0";
+        
+        setTimeout(() => {
+            titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">NỘI DUNG ĐÃ ĐÓNG</span><br>${poll.title}`;
+            optionsContainer.innerHTML = `
+                <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-4">
+                    <i class="fa-solid fa-lock text-4xl text-slate-700 animate-pulse"></i>
+                    <p class="text-slate-500 font-bold uppercase tracking-widest text-[11px]">Admin đã đóng cổng bình chọn cho mục này.</p>
+                    <button onclick="showPollStep(${index + 1})" class="mt-4 px-6 py-2 bg-white/5 border border-white/10 rounded-full text-[9px] text-slate-400 uppercase">Bỏ qua & Sang câu tiếp theo</button>
+                </div>`;
+            titleEl.style.opacity = "1";
+            optionsContainer.style.opacity = "1";
+        }, 300);
+        return;
+    }
+
+    // 4. HIỂN THỊ BÌNH THƯỜNG (Có hiệu ứng Fade mượt)
+    titleEl.style.opacity = "0";
+    titleEl.style.transform = "translateY(10px)";
+    optionsContainer.style.opacity = "0";
+
+    setTimeout(() => {
+        titleEl.innerHTML = `<span class="block text-indigo-400 text-[10px] tracking-[4px] mb-2 font-black">NỘI DUNG ${index + 1}/${userPollsQueue.length}</span>${poll.title}`;
+        
+        optionsContainer.innerHTML = poll.options.map((opt, i) => `
+            <button onclick="confirmVote(${i}, '${opt}')" 
+                    class="glass p-6 rounded-[28px] text-left border border-white/5 hover:border-indigo-500/50 flex justify-between items-center group active:scale-95 transition-all">
+                <span class="text-lg font-bold uppercase italic group-hover:text-indigo-400">${opt}</span>
+                <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-indigo-500/20">
+                    <i class="fa-solid fa-chevron-right text-slate-600 group-hover:text-indigo-400"></i>
+                </div>
+            </button>`).join('');
+
+        titleEl.style.opacity = "1";
+        titleEl.style.transform = "translateY(0)";
+        optionsContainer.style.opacity = "1";
+    }, 300);
+}
+
+async function saveStepVote(optionIdx, optionName) {
+    const poll = userPollsQueue[userCurrentIndex];
+    
+    try {
+        // Gửi phiếu lên Firebase
+        await rdb.ref(`s_votes/polls/${poll.id}/votes`).push(optionIdx);
+        
+        // ĐÁNH DẤU: Máy này đã bầu xong nội dung ID này
+        localStorage.setItem('voted_' + poll.id, poll.v || 1);
+        
+        const optionsContainer = document.getElementById('u-options');
+        optionsContainer.style.opacity = '0';
+        
+        setTimeout(() => {
+            if (userCurrentIndex === userPollsQueue.length - 1) {
                 finishAllVotes();
-                return;
+            } else {
+                showPollStep(userCurrentIndex + 1);
             }
+        }, 400);
 
-            userCurrentIndex = index;
-            const poll = userPollsQueue[index];
-
-            // --- THÊM DÒNG NÀY: Để Admin tự nhảy biểu đồ theo User ---
-            loadPoll(poll.id); 
-            // -------------------------------------------------------
-            
-            // Cập nhật độ dài thanh tiến trình (Ví dụ câu 1/2 thì chạy được 50%)
-            const progress = ((index + 1) / userPollsQueue.length) * 100;
-            document.getElementById('user-progress-bar').style.width = progress + '%';
-
-            const titleEl = document.getElementById('u-title');
-            const optionsContainer = document.getElementById('u-options');
-
-            // Hiệu ứng ẩn đi trước khi đổi nội dung (Fade out)
-            titleEl.style.opacity = "0";
-            titleEl.style.transform = "translateY(10px)";
-            optionsContainer.style.opacity = "0";
-
-            setTimeout(() => {
-                // Đổi nội dung chữ
-                titleEl.innerHTML = `<span class="block text-indigo-400 text-[10px] tracking-[4px] mb-2 font-black">NỘI DUNG ${index + 1}/${userPollsQueue.length}</span>${poll.title}`;
-                
-                // Đổi danh sách các nút bấm
-                optionsContainer.innerHTML = poll.options.map((opt, i) => `
-                    <button onclick="confirmVote(${i}, '${opt}')" 
-                            class="glass p-6 rounded-[28px] text-left border border-white/5 hover:border-indigo-500/50 flex justify-between items-center group active:scale-95 transition-all">
-                        <span class="text-lg font-bold uppercase italic group-hover:text-indigo-400">${opt}</span>
-                        <div class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-indigo-500/20">
-                            <i class="fa-solid fa-chevron-right text-slate-600 group-hover:text-indigo-400"></i>
-                        </div>
-                    </button>`).join('');
-
-                // Hiện nội dung mới lên (Fade in)
-                titleEl.style.opacity = "1";
-                titleEl.style.transform = "translateY(0)";
-                optionsContainer.style.opacity = "1";
-            }, 300);
-        }
-
-        async function saveStepVote(optionIdx, optionName) {
-            const poll = userPollsQueue[userCurrentIndex];
-            
-            try {
-                await rdb.ref(`s_votes/polls/${poll.id}/votes`).push(optionIdx);
-                
-                const optionsContainer = document.getElementById('u-options');
-                optionsContainer.style.opacity = '0';
-                optionsContainer.style.transform = 'translateX(-20px)';
-                
-                setTimeout(() => {
-                    // Nếu đây là câu hỏi cuối cùng trong chuỗi
-                    if (userCurrentIndex === userPollsQueue.length - 1) {
-                        // ĐÁNH DẤU: Máy này đã hoàn thành cả sự kiện (Event)
-                        localStorage.setItem('event_completed', 'true');
-                        finishAllVotes();
-                    } else {
-                        showPollStep(userCurrentIndex + 1);
-                        optionsContainer.style.transform = 'translateX(0)';
-                    }
-                }, 400);
-
-            } catch (e) {
-                S_Notify.alert("Lỗi kết nối, vui lòng thử lại", "error");
-            }
-        }
+    } catch (e) {
+        S_Notify.alert("Lỗi kết nối, vui lòng thử lại", "error");
+    }
+}
 
         function finishAllVotes() {
             const overlay = document.getElementById('success-overlay');
@@ -1050,88 +1107,107 @@ async function handleRestore(isRestore) {
 
 
         function addOptionField(v = "") {
-            const container = document.getElementById('options-list');
-            
-            // Tự động tính số thứ tự ứng viên nếu không truyền vào (1, 2, 3...)
-            if (!v) {
-                const count = container.querySelectorAll('div').length;
-                v = `Ứng viên ${count + 1}...`; // count bắt đầu từ 0 nên +1 để ra 1, 2, 3...
-            }
+    const container = document.getElementById('options-list');
+    const count = container.querySelectorAll('.opt').length;
+    
+    const div = document.createElement('div');
+    div.className = "flex items-center gap-3 mb-3 animate-in fade-in slide-in-from-left-2 duration-300"; 
+    
+    // Logic: Nếu v có dữ liệu -> Đưa vào value (chữ nổi). Nếu không -> Để trống, dùng placeholder (chữ mờ)
+    div.innerHTML = `
+        <input type="text" class="opt flex-1 p-5 rounded-2xl font-bold" 
+               placeholder="Ứng viên ${count + 1}..." 
+               value="${v}">
+        <button onclick="this.parentElement.remove()" class="btn-del text-slate-600 hover:text-red-500 px-3 transition-colors">
+            <i class="fa-solid fa-circle-xmark"></i>
+        </button>`;
+    
+    container.appendChild(div);
+    setTimeout(() => {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+        if(!v) div.querySelector('input').focus();
+    }, 50); 
+}
 
-            const div = document.createElement('div');
-            div.className = "flex items-center gap-3 mb-3 animate-in fade-in slide-in-from-left-2 duration-300"; 
-            
-            div.innerHTML = `
-                <input type="text" class="opt flex-1 p-5 rounded-2xl font-bold" placeholder="${v}" value="">
-                <button onclick="this.parentElement.remove()" class="btn-del text-slate-600 hover:text-red-500 px-3 transition-colors">
-                    <i class="fa-solid fa-circle-xmark"></i>
-                </button>`;
-            
-            container.appendChild(div);
+    async function activatePoll() {
+    const titleInput = document.getElementById('vote-title');
+    const title = titleInput.value.trim();
 
-            // Lấy ô input vừa tạo
-            const newInput = div.querySelector('input');
+    // 1. LOGIC MỚI: Lấy dữ liệu options (Nếu User không gõ thì tự lấy chữ trong Placeholder)
+    const options = Array.from(document.querySelectorAll('.opt'))
+        .map(i => i.value.trim() || i.placeholder.replace('...', '').trim()) 
+        .filter(x => x);
 
-            // Đợi trình duyệt render xong rồi cuộn và focus
-            setTimeout(() => {
-                // Cuộn xuống cuối danh sách để thấy ô mới thêm
-                container.scrollTo({
-                    top: container.scrollHeight,
-                    behavior: 'smooth'
-                });
-                
-                // Tự động đặt con trỏ vào ô mới để người dùng gõ phím ngay
-                newInput.focus();
-            }, 50); 
-        }
+    // 2. LOGIC MỚI: KIỂM TRA TRÙNG TÊN PHƯƠNG ÁN
+    const uniqueOptions = new Set(options);
+    if (uniqueOptions.size !== options.length) {
+        S_Notify.alert("Lỗi: Tên các phương án bầu chọn không được trùng nhau!", "error");
+        return;
+    }
+    
+    if(!title || options.length < 2) {
+        S_Notify.alert("Vui lòng nhập đủ chủ đề và ít nhất 2 phương án", "error");
+        return;
+    }
 
-        async function activatePoll() {
-            const titleInput = document.getElementById('vote-title');
-            const title = titleInput.value.trim();
+    if (editingPollId) {
+        // --- CHẾ ĐỘ SỬA ---
+        const id = editingPollId;
+        const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+        const oldData = snap.val();
+        
+        // Tăng version để mở khóa cho người dùng bầu lại
+        const newVersion = (oldData.v || 0) + 1;
 
-            // THAY ĐỔI: Nếu giá trị (value) trống, thì lấy placeholder
-            const options = Array.from(document.querySelectorAll('.opt'))
-                .map(i => i.value.trim() || i.placeholder.trim()) 
-                .filter(x => x);
-            
-            if(!title || options.length < 2) {
-                S_Notify.alert("Vui lòng nhập đủ chủ đề và ít nhất 2 phương án", "error");
-                return;
-            }
+        const updateData = {
+            title,
+            options,
+            v: newVersion,     
+            votes: null,       // XÓA SẠCH PHIẾU BẦU CŨ
+            isLocked: false,   // TỰ ĐỘNG MỞ CỔNG KHI SỬA XONG
+            ts: Date.now()     
+        };
 
-            const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-            const pollData = { title, options, ts: Date.now() };
+        await rdb.ref('s_votes/polls/' + id).update(updateData);
+        
+        // Reset trạng thái nút về ban đầu
+        const mainBtn = document.querySelector('button[onclick="activatePoll()"]');
+        mainBtn.innerHTML = `<i class="fa-solid fa-bolt"></i> KÍCH HOẠT & LƯU DANH SÁCH`;
+        mainBtn.style.background = ""; // Xóa màu Amber
+        
+        editingPollId = null;
+        S_Notify.alert("Đã cập nhật và mở khóa bầu chọn!");
+        loadPoll(id); 
+    } else {
+        // --- CHẾ ĐỘ TẠO MỚI ---
+        const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+        // Khởi tạo thêm v: 1 và isLocked: false mặc định
+        const pollData = { 
+            title, 
+            options, 
+            v: 1, 
+            isLocked: false, 
+            ts: Date.now() 
+        }; 
 
-            await rdb.ref('s_votes/polls/' + pollId).set(pollData);
-            await rdb.ref('s_votes/active_event_list').child(pollId).set(true);
+        await rdb.ref('s_votes/polls/' + pollId).set(pollData);
+        await rdb.ref('s_votes/active_event_list').child(pollId).set(true);
 
-            let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
-            
-            // Đổi unshift thành push nếu bạn muốn mục mới luôn nằm ở dưới cùng
-            list.push(pollId); 
-            
-            localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
-            localStorage.setItem('s_votes_active_id', pollId);
+        let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
+        list.push(pollId);
+        localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
+        localStorage.setItem('s_votes_active_id', pollId);
+        loadPoll(pollId);
+        S_Notify.alert("Đã kích hoạt mục bầu chọn mới!");
+    }
 
-            loadPoll(pollId); 
-            refreshPollList();
-            
-            // --- ĐOẠN CODE MỚI: TỰ ĐỘNG CUỘN XUỐNG ---
-            const pollListContainer = document.getElementById('active-polls-list');
-            setTimeout(() => {
-                pollListContainer.scrollTo({
-                    top: pollListContainer.scrollHeight,
-                    behavior: 'smooth'
-                });
-            }, 500); // Đợi 0.5s để danh sách kịp render xong rồi mới cuộn
-            // ---------------------------------------
-
-            titleInput.value = "";
-            document.getElementById('options-list').innerHTML = "";
-            addOptionField(); addOptionField();
-
-            S_Notify.alert("Đã kích hoạt mục mới!");
-        }
+    // 3. LOGIC LÀM SẠCH FORM (Sau khi bấm xác nhận sẽ trống để nhập cái tiếp theo)
+    titleInput.value = "";
+    document.getElementById('options-list').innerHTML = "";
+    addOptionField(); // Tự ra Ứng viên 1 (Mờ)
+    addOptionField(); // Tự ra Ứng viên 2 (Mờ)
+    refreshPollList();
+}
 
         function resetSystemHistory() {
             S_Notify.confirm("Hệ thống sẽ xóa sạch danh sách quản lý và dữ liệu hiện tại để bắt đầu sự kiện mới. Bạn đồng ý chứ?", () => {
@@ -1194,9 +1270,14 @@ async function handleRestore(isRestore) {
                                 ${isActive ? 'bg-indigo-500/15 border-indigo-500 border-l-4 shadow-lg' : 'bg-white/5 border-white/10 opacity-60'}">
                         <p class="text-[11px] font-black text-white uppercase truncate">${poll.title}</p>
                     </div>
-                    <button onclick="deletePoll('${poll.id}')" class="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all">
-                        <i class="fa-solid fa-trash-can text-sm"></i>
-                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="prepareEditPoll('${poll.id}')" class="w-10 h-10 flex items-center justify-center rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white transition-all">
+                            <i class="fa-solid fa-pen-to-square text-sm"></i>
+                        </button>
+                        <button onclick="deletePoll('${poll.id}')" class="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all">
+                            <i class="fa-solid fa-trash-can text-sm"></i>
+                        </button>
+                    </div>
                 `;
                 container.appendChild(wrapper);
             });
@@ -1209,17 +1290,25 @@ async function loadPoll(id) {
     currentId = id;
     localStorage.setItem('s_votes_active_id', id);
 
-    // 1. CHỈ CẬP NHẬT BÁO CÁO (BIỂU ĐỒ)
-    document.getElementById('vote-bars').innerHTML = ""; // Reset khung vẽ
-
     const snap = await rdb.ref('s_votes/polls/' + id).once('value');
     const data = snap.val();
     if(!data) return;
 
-    // Cập nhật tiêu đề báo cáo và đèn Live
+    // Cập nhật giao diện báo cáo
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
+    // --- CẬP NHẬT TRẠNG THÁI NÚT KHÓA ---
+    const lockBtn = document.getElementById('btn-lock-toggle');
+    lockBtn.classList.remove('hidden'); // Hiện nút lên
+    
+    if (data.isLocked) {
+        lockBtn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> TRẠNG THÁI: ĐÃ KHÓA`;
+        lockBtn.className = lockBtn.className.replace('text-slate-400', 'text-amber-500 border-amber-500 bg-amber-500/5');
+    } else {
+        lockBtn.innerHTML = `<i class="fa-solid fa-lock-open mr-2"></i> TRẠNG THÁI: ĐANG MỞ`;
+        lockBtn.className = lockBtn.className.replace('text-amber-500 border-amber-500 bg-amber-500/5', 'text-slate-400 border-white/10 bg-white/5');
+    }
     // 2. CHỈ CẬP NHẬT QR CODE
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
@@ -1245,6 +1334,33 @@ async function loadPoll(id) {
     refreshPollList();
     
     // TUYỆT ĐỐI KHÔNG ĐỤNG CHẠM GÌ ĐẾN FORM NHẬP LIỆU Ở ĐÂY
+}
+
+async function prepareEditPoll(id) {
+    const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+    const data = snap.val();
+    if (!data) return;
+
+    editingPollId = id; // Đánh dấu đang sửa
+
+    // 1. Đổ tiêu đề
+    document.getElementById('vote-title').value = data.title;
+
+    // 2. Đổ các phương án
+    const optionsContainer = document.getElementById('options-list');
+    optionsContainer.innerHTML = "";
+    data.options.forEach(opt => {
+        addOptionField(opt);
+    });
+
+    // 3. Đổi trạng thái nút bấm
+    const mainBtn = document.querySelector('button[onclick="activatePoll()"]');
+    mainBtn.innerHTML = `<i class="fa-solid fa-check-double"></i> XÁC NHẬN ĐÃ SỬA & RESET PHIẾU`;
+    mainBtn.classList.remove('bg-indigo-600');
+    mainBtn.classList.add('bg-amber-600', 'shadow-amber-500/30');
+
+    S_Notify.alert("Đã tải dữ liệu cũ. Hãy thực hiện sửa đổi!");
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
         function deletePoll(id) {
@@ -1882,6 +1998,53 @@ if ('serviceWorker' in navigator) {
             .catch(err => console.log('SW Failed!', err));
     });
 }
+
+// KHÓA / MỞ KHÓA
+async function toggleLockPoll() {
+    if (!currentId) return;
+    const snap = await rdb.ref(`s_votes/polls/${currentId}/isLocked`).once('value');
+    const currentState = snap.val() || false;
+    const newState = !currentState;
+
+    await rdb.ref(`s_votes/polls/${currentId}`).update({ isLocked: newState });
+    
+    const btn = document.getElementById('btn-lock-toggle');
+    btn.innerHTML = newState ? `<i class="fa-solid fa-lock mr-2"></i> MỞ CỔNG BÌNH CHỌN` : `<i class="fa-solid fa-lock-open mr-2"></i> KHÓA CỔNG BÌNH CHỌN`;
+    btn.className = newState ? btn.className.replace('text-slate-500', 'text-amber-500 border-amber-500') : btn.className;
+    
+    S_Notify.alert(newState ? "Đã khóa cổng bình chọn!" : "Đã mở lại cổng bình chọn!");
+}
+
+// THEO DÕI TRẠNG THÁI MẠNG (LOGIC C)
+function watchConnection() {
+    const indicator = document.getElementById('live-indicator');
+    // Mặc định luôn hiện indicator này
+    indicator.classList.remove('hidden');
+    indicator.classList.add('flex');
+
+    rdb.ref(".info/connected").on("value", (snap) => {
+        const textEl = indicator.querySelector('.text-status') || indicator.querySelector('span:last-child');
+        
+        if (snap.val() === true) {
+            // Khi có mạng
+            indicator.classList.remove('offline');
+            textEl.innerText = "HỆ THỐNG LIVE";
+            textEl.className = "text-[10px] font-black text-emerald-400 uppercase tracking-widest text-status";
+        } else {
+            // Khi mất mạng
+            indicator.classList.add('offline');
+            textEl.innerText = "MẤT KẾT NỐI";
+            textEl.className = "text-[10px] font-black text-red-500 uppercase tracking-widest text-status";
+        }
+    });
+}
+
+// Gọi cleanup và watch khi load trang
+window.addEventListener('load', () => {
+    autoCleanupFirebase();
+    watchConnection();
+});
+
     </script>
 
     <!-- Container cho Toast Thông báo -->
