@@ -1446,13 +1446,16 @@ function renderBarChart() {
     const data = lastPollData;
     const filterText = document.getElementById('table-filter').value.toLowerCase().trim();
     
+    // 1. Kiểm đếm phiếu bầu (Tallying)
     const votes = data.votes ? Object.values(data.votes) : [];
     const counts = new Array(data.options.length).fill(0);
-    votes.forEach(v => counts[v]++);
+    votes.forEach(v => {
+        if (counts[v] !== undefined) counts[v]++;
+    });
 
-    // 1. Lọc và Sắp xếp
+    // 2. Chuẩn bị dữ liệu và Sắp xếp (Người nhiều phiếu nhất đứng đầu)
     let chartData = data.options.map((name, index) => ({
-        id: `col-opt-${index}`, 
+        realIndex: index, // Lưu lại vị trí gốc để đối chiếu với Firebase
         name: name,
         votes: counts[index]
     }))
@@ -1463,7 +1466,7 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // 2. Khởi tạo khung nếu chưa có
+    // 3. Khởi tạo hoặc dọn dẹp khung vẽ
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
             <div class="chart-scroll-container" style="width:100%; overflow-x:auto; padding-bottom:100px;">
@@ -1477,10 +1480,9 @@ function renderBarChart() {
     const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
     
-    // 3. Tính toán độ rộng dựa trên tên dài nhất
+    // 4. Tính toán độ rộng động cho trục Ox
     const maxChars = chartData.length > 0 ? Math.max(...chartData.map(d => d.name.length)) : 0;
-    const minColWidth = Math.max(130, (maxChars * 9) + 40); // Giãn cách dựa trên tên
-    
+    const minColWidth = Math.max(130, (maxChars * 9) + 40); 
     const itemsCount = chartData.length;
     const finalWidth = Math.max(scrollWin.clientWidth - 80, itemsCount * minColWidth);
     
@@ -1488,44 +1490,48 @@ function renderBarChart() {
     const step = finalWidth / (itemsCount || 1);
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
-    // 4. Ẩn các cột cũ không nằm trong bộ lọc
+    // 5. Quản lý các cột (Tạo mới hoặc cập nhật)
+    // Ẩn tất cả các cột đang có trong DOM trước
     frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
 
-    // 5. Vẽ và cập nhật cột
     chartData.forEach((item, index) => {
-        let colEl = document.getElementById(item.id);
+        const colId = `col-opt-${item.realIndex}`; // Dùng index gốc để giữ ID cố định cho hiệu ứng transition
+        let colEl = document.getElementById(colId);
         
         if (!colEl) {
             colEl = document.createElement('div');
-            colEl.id = item.id;
+            colEl.id = colId;
             colEl.className = 'column-item';
-            colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
+            colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
                 <div class="column-bar" style="width:45px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:5px; transition:height 1s ease; position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.3);">
-                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px;">0</span>
+                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
                 </div>
-                <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase;">${item.name}</span>
+                <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; width:max-content; text-align:center;"></span>
             `;
             frame.appendChild(colEl);
         }
 
+        // Hiện cột và cập nhật nội dung
         colEl.style.display = 'flex';
-        // Tính vị trí X sao cho cột nằm giữa khoảng chia
-        const xPos = index * step + (step/2) - 30;
-        
-        // FIX: Đảm bảo tối thiểu 5px để 0 phiếu vẫn hiện chân cột mờ mờ cho đẹp
-        const hPx = Math.max(5, Math.floor((item.votes / maxVotes) * 280));
+        colEl.querySelector('.column-name').innerText = item.name;
 
+        // Tính vị trí X mới (dựa trên thứ tự sau khi sắp xếp)
+        const xPos = index * step + (step / 2) - 30;
+        const hPx = Math.max(8, Math.floor((item.votes / maxVotes) * 280)); // Tối thiểu 8px để thấy cột
+
+        // Áp dụng hiệu ứng di chuyển ngang
         colEl.style.transform = `translateX(${xPos}px)`;
         
+        // Cập nhật chiều cao và con số sau một khoảng delay nhỏ
         const bar = colEl.querySelector('.column-bar');
         const voteText = colEl.querySelector('.column-votes');
         
         setTimeout(() => {
             if(bar) bar.style.height = hPx + "px";
             if(voteText) voteText.innerText = item.votes;
-        }, 100);
+        }, 50);
     });
 }
 
@@ -1589,31 +1595,29 @@ function filterTable() {
             }
         }
 
-        function zoomQR() { 
-            if(!lastQR) return S_Notify.alert("Chưa có mã QR!", "error");
-            
-            const overlay = document.getElementById('qr-zoom-overlay');
-            const content = document.getElementById('qr-zoom-content');
-            
-            content.innerHTML = `<img src="${lastQR}" class="w-[70vmin] h-[70vmin] object-contain rounded-3xl shadow-[0_0_100px_rgba(255,255,255,0.3)]">`;
-            overlay.style.display = 'flex';
+    function zoomQR() { 
+    if(!lastQR) return S_Notify.alert("Chưa có mã QR!", "error");
+    
+    const overlay = document.getElementById('qr-zoom-overlay');
+    const content = document.getElementById('qr-zoom-content');
+    
+    content.innerHTML = `<img src="${lastQR}" class="w-[70vmin] h-[70vmin] object-contain rounded-3xl shadow-[0_0_100px_rgba(255,255,255,0.3)]">`;
+    overlay.style.display = 'flex';
 
-            // KÍCH HOẠT CHẾ ĐỘ TOÀN MÀN HÌNH (F11 Presentation)
-            if (overlay.requestFullscreen) {
-                overlay.requestFullscreen();
-            } else if (overlay.webkitRequestFullscreen) { /* Safari */
-                overlay.webkitRequestFullscreen();
-            } else if (overlay.msRequestFullscreen) { /* IE11 */
-                overlay.msRequestFullscreen();
-            }
-        }
+    // Gọi Fullscreen cho chính cái Overlay
+    if (overlay.requestFullscreen) {
+        overlay.requestFullscreen().catch(err => console.warn("Lỗi F11:", err));
+    } else if (overlay.webkitRequestFullscreen) { /* Safari */
+        overlay.webkitRequestFullscreen();
+    }
+}
 
-        // Thêm sự kiện để khi thoát Fullscreen thì tự đóng lớp phủ luôn
-        document.addEventListener('fullscreenchange', () => {
-            if (!document.fullscreenElement) {
-                document.getElementById('qr-zoom-overlay').style.display = 'none';
-            }
-        });
+// Khi thoát F11 bằng phím Esc, overlay phải tự đóng
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+        document.getElementById('qr-zoom-overlay').style.display = 'none';
+    }
+});
 
         async function downloadQR() {
             const card = document.getElementById('qr-card-capture');
