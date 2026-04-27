@@ -585,16 +585,18 @@ img[alt="S-VOTES Logo"]:hover {
 /* Tên phương án bên dưới */
 .column-name {
     position: absolute;
-    bottom: -35px;
-    font-size: 11px;
+    bottom: -45px;
+    font-size: 12px;
     font-weight: 800;
     color: white;
     text-align: center;
-    width: 120px;
+    /* Loại bỏ giới hạn chiều rộng */
+    width: max-content; 
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible !important;
+    text-overflow: clip !important;
     text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 /* Khung bọc có thanh cuộn ngang */
@@ -1320,31 +1322,24 @@ function renderBarChart() {
     if (!lastPollData) return;
 
     const data = lastPollData;
-    // Lấy giá trị lọc và làm sạch (xóa khoảng trắng, chuyển về chữ thường)
     const filterText = document.getElementById('table-filter').value.toLowerCase().trim();
     
     const votes = data.votes ? Object.values(data.votes) : [];
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
-    // Bước 1: Tạo mảng dữ liệu gốc
-    let allData = data.options.map((name, index) => ({
+    let chartData = data.options.map((name, index) => ({
         id: `col-opt-${index}`, 
         name: name,
         votes: counts[index]
-    }));
-
-    // Bước 2: LỌC dữ liệu dựa trên ô tìm kiếm
-    let filteredData = allData.filter(item => item.name.toLowerCase().includes(filterText));
-
-    // Bước 3: Sắp xếp dữ liệu đã lọc (để cột cao nhất luôn đứng đầu trong kết quả lọc)
-    filteredData.sort((a, b) => b.votes - a.votes);
+    }))
+    .filter(item => item.name.toLowerCase().includes(filterText))
+    .sort((a, b) => b.votes - a.votes);
 
     const container = document.getElementById('vote-bars');
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // TẠO CẤU TRÚC KHUNG CUỘN (Chỉ tạo một lần)
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
             <div class="chart-scroll-container">
@@ -1358,21 +1353,28 @@ function renderBarChart() {
     const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
     
-    // TÍNH ĐỘ RỘNG ĐỘNG dựa trên số lượng cột SAU KHI LỌC
-    const minColWidth = 100;
-    const itemsCount = filteredData.length;
+    // --- ĐOẠN FIX TÊN DÀI ---
+    // 1. Tìm độ dài của tên dài nhất (số lượng chữ cái)
+    const maxChars = chartData.length > 0 
+        ? Math.max(...chartData.map(d => d.name.length)) 
+        : 0;
+
+    // 2. Tính toán độ rộng cần thiết cho mỗi cột (Ví dụ: mỗi chữ cái chiếm ~10px + 60px khoảng cách an toàn)
+    // Bạn có thể chỉnh số 60 to hơn nếu muốn đầu tên này cách đuôi tên kia xa hơn
+    const minColWidth = (maxChars * 9) + 60; 
+    
+    const itemsCount = chartData.length;
     const neededWidth = (itemsCount + 1) * minColWidth;
     const finalWidth = Math.max(scrollWin.clientWidth - 50, neededWidth);
     
     frame.style.width = finalWidth + "px";
     const step = finalWidth / (itemsCount + 1);
-    const maxVotes = Math.max(...allData.map(d => d.votes), 1);
+    const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
+    // ------------------------
 
-    // Ẩn tất cả các cột cũ trước khi vẽ vị trí mới
     frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
 
-    // Vẽ và cập nhật vị trí cho những cột thỏa mãn điều kiện lọc
-    filteredData.forEach((item, index) => {
+    chartData.forEach((item, index) => {
         let colEl = document.getElementById(item.id);
         
         if (!colEl) {
@@ -1385,16 +1387,12 @@ function renderBarChart() {
                 <div class="column-bar" style="width:40px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.4); display:block !important;">
                     <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
                 </div>
-                <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; text-align:center;">${item.name}</span>
+                <span class="column-name">${item.name}</span>
             `;
             frame.appendChild(colEl);
-            void colEl.offsetHeight;
         }
 
-        // Hiện cột lên
         colEl.style.display = 'flex';
-
-        // TÍNH TOÁN VỊ TRÍ X: Quan trọng nhất, index ở đây là index trong mảng đã lọc
         const xPos = (index + 1) * step - 30;
         const hPx = Math.floor((item.votes / maxVotes) * 280);
 
