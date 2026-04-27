@@ -1790,7 +1790,7 @@ function clearPollForm() {
 }
 
 function masterResetSystem() {
-    S_Notify.confirm("XÁC NHẬN: Hệ thống sẽ xóa sạch TOÀN BỘ dữ liệu trên cả DATABASE và máy này. Bạn chắc chắn chứ?", async () => {
+    S_Notify.confirm("XÁC NHẬN: Hệ thống sẽ xóa sạch TOÀN BỘ dữ liệu. Bạn chắc chắn chứ?", async () => {
         // 1. Ngắt kết nối Firebase hiện tại
         if (currentId) rdb.ref('s_votes/polls/' + currentId).off();
 
@@ -1802,7 +1802,7 @@ function masterResetSystem() {
         // 3. Xóa LocalStorage trên máy Admin
         localStorage.clear();
 
-        S_Notify.alert("Hệ thống đã được dọn sạch từ Database đến máy chủ!");
+        S_Notify.alert("Hệ thống đã được dọn sạch!");
 
         // 4. Load lại trang
         setTimeout(() => {
