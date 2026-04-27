@@ -933,8 +933,10 @@ input.opt::placeholder {
         let userPollsQueue = [];
         let userCurrentIndex = 0;
         let userAnswers = {};
+        let sessionVotes = 0; // Thêm biến này để đếm số mục đã thực sự bấm bầu
 
 async function renderEventPoll() {
+    sessionVotes = 0; // Reset số lượng bầu về 0 khi bắt đầu quét mới
     document.getElementById('view-admin').classList.add('hidden');
     document.getElementById('view-user').classList.remove('hidden');
 
@@ -989,11 +991,20 @@ function showPollStep(index) {
 
     // NẾU BỊ KHÓA
     if (poll.isLocked) {
-        titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">BÌNH CHỌN ĐÃ BỊ KHÓA</span><br>${poll.title}`;
+        titleEl.innerHTML = `<span class="text-amber-500 italic text-2xl">BÌNH CHỌN TẠM ĐÓNG</span><br>${poll.title}`;
+        
+        // Kiểm tra xem đây có phải là mục cuối cùng trong danh sách không
+        const isLast = (index + 1 >= userPollsQueue.length);
+
         optionsContainer.innerHTML = `
-            <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-4">
-                <i class="fa-solid fa-lock text-4xl text-slate-700 animate-pulse"></i>
-                <button onclick="showPollStep(${index + 1})" class="w-full py-4 bg-white/5 rounded-2xl text-slate-400 uppercase text-[10px]">Thoát</button>
+            <div class="p-10 border-2 border-dashed border-white/10 rounded-[40px] text-center space-y-6">
+                <i class="fa-solid fa-lock text-5xl text-slate-700 animate-pulse"></i>
+                <p class="text-slate-500 text-[10px] font-bold uppercase tracking-[2px]">Nội dung này hiện đang khóa cổng bình chọn</p>
+                
+                <button onclick="${isLast ? 'location.reload()' : `showPollStep(${index + 1})`}" 
+                        class="w-full py-4 ${isLast ? 'bg-white/5 text-slate-400' : 'bg-indigo-600 text-white'} rounded-2xl font-black uppercase text-[10px] tracking-[2px]">
+                    ${isLast ? 'THOÁT HỆ THỐNG' : 'XEM NỘI DUNG TIẾP THEO'}
+                </button>
             </div>`;
         return;
     }
@@ -1016,6 +1027,8 @@ async function saveStepVote(optionIdx, optionName) {
         
         // QUAN TRỌNG: Lưu đúng số Version của Poll này vào máy User để chặn bầu lại bản này
         localStorage.setItem('voted_' + poll.id, poll.v || 1);
+
+        sessionVotes++; // Tăng biến đếm ở đây
         
         const optionsContainer = document.getElementById('u-options');
         optionsContainer.style.opacity = '0';
@@ -1029,26 +1042,36 @@ async function saveStepVote(optionIdx, optionName) {
     }
 }
 
-        function finishAllVotes() {
-            const overlay = document.getElementById('success-overlay');
-            overlay.style.display = 'flex';
-            overlay.innerHTML = `
-                <div class="relative mb-8">
-                    <div class="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full"></div>
-                    <div class="relative w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.4)]">
-                        <i class="fa-solid fa-check-double text-4xl text-white"></i>
-                    </div>
+function finishAllVotes() {
+    const overlay = document.getElementById('success-overlay');
+    overlay.style.display = 'flex';
+    
+    if (sessionVotes > 0) {
+        // Trường hợp có bình chọn ít nhất 1 mục
+        overlay.innerHTML = `
+            <div class="relative mb-8">
+                <div class="absolute inset-0 bg-emerald-500/20 blur-3xl rounded-full"></div>
+                <div class="relative w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.4)]">
+                    <i class="fa-solid fa-check-double text-4xl text-white"></i>
                 </div>
-                <h2 class="text-4xl font-black italic text-white uppercase tracking-tighter text-center">HOÀN THÀNH TẤT CẢ</h2>
-                <p class="text-emerald-400/80 font-bold uppercase tracking-[4px] mt-4 text-[10px] text-center">Bạn đã hoàn tất ${userPollsQueue.length} nội dung bình chọn</p>
-            `;
-            
-            confetti({
-                particleCount: 200,
-                spread: 100,
-                origin: { y: 0.6 }
-            });
-        }
+            </div>
+            <h2 class="text-4xl font-black italic text-white uppercase tracking-tighter text-center">HOÀN THÀNH</h2>
+            <p class="text-emerald-400/80 font-bold uppercase tracking-[4px] mt-4 text-[10px] text-center">Bạn đã hoàn tất ${sessionVotes}/${userPollsQueue.length} nội dung</p>
+            <button onclick="location.reload()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase text-slate-400">Quay lại</button>
+        `;
+        confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
+    } else {
+        // Trường hợp không bình chọn được mục nào (tất cả đều bị khóa hoặc bỏ qua)
+        overlay.innerHTML = `
+            <div class="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center mb-8">
+                <i class="fa-solid fa-circle-info text-3xl text-amber-500"></i>
+            </div>
+            <h2 class="text-2xl font-black italic text-white uppercase tracking-tighter text-center">KHÔNG CÓ DỮ LIỆU MỚI</h2>
+            <p class="text-slate-400 font-bold uppercase tracking-[2px] mt-4 text-[10px] text-center">Các nội dung bình chọn đang đóng hoặc bạn đã thực hiện trước đó.</p>
+            <button onclick="location.reload()" class="mt-12 px-8 py-3 bg-white/5 border border-white/10 rounded-full text-[9px] font-black uppercase text-slate-400">Quay lại</button>
+        `;
+    }
+}
 
 
 async function handleRestore(isRestore) {
