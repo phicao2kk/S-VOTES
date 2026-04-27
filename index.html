@@ -935,13 +935,13 @@ input.opt::placeholder {
         let userAnswers = {};
 
 async function renderEventPoll() {
+    // 1. XÓA BỎ đoạn check event_completed ở đây
     document.getElementById('view-admin').classList.add('hidden');
     document.getElementById('view-user').classList.remove('hidden');
 
     const statusEl = document.getElementById('u-title');
     statusEl.innerText = "ĐANG TẢI...";
 
-    // 1. Lấy danh sách các ID đang chạy thực tế từ Firebase
     const snap = await rdb.ref('s_votes/active_event_list').once('value');
     const activeIds = snap.val() ? Object.keys(snap.val()) : [];
 
@@ -950,24 +950,21 @@ async function renderEventPoll() {
         return;
     }
 
-    // 2. Tải dữ liệu chi tiết của tất cả các poll
     const pSnaps = await Promise.all(activeIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
     const allPolls = pSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
 
-    // 3. LOGIC LỌC MỚI: Chỉ hiện những câu máy này CHƯA VOTE hoặc CÓ VERSION MỚI HƠN
+    // 2. LỌC THÔNG MINH: Chỉ hiện những câu chưa bầu hoặc version mới hơn
     userPollsQueue = allPolls.filter(p => {
         const localVer = localStorage.getItem('voted_' + p.id);
-        // Cho phép bầu nếu: chưa có dấu vết bầu OR (version máy < version server)
         return !localVer || parseInt(localVer) < (p.v || 1);
     });
 
-    // 4. Sắp xếp theo thời gian tạo
     userPollsQueue.sort((a, b) => a.ts - b.ts);
 
-    // 5. Kiểm tra kết quả lọc
     if (userPollsQueue.length > 0) {
         showPollStep(0);
     } else {
+        // Nếu đã bầu hết version mới nhất rồi thì mới hiện thông báo
         document.getElementById('success-overlay').style.display = 'flex';
     }
 }
@@ -1035,12 +1032,10 @@ async function renderEventPoll() {
 
 async function saveStepVote(optionIdx, optionName) {
     const poll = userPollsQueue[userCurrentIndex];
-    
     try {
-        // Gửi phiếu lên Firebase
         await rdb.ref(`s_votes/polls/${poll.id}/votes`).push(optionIdx);
         
-        // ĐÁNH DẤU: Máy này đã bầu xong nội dung ID này
+        // Chỉ lưu số Version của nội dung này vào máy User
         localStorage.setItem('voted_' + poll.id, poll.v || 1);
         
         const optionsContainer = document.getElementById('u-options');
@@ -1048,14 +1043,14 @@ async function saveStepVote(optionIdx, optionName) {
         
         setTimeout(() => {
             if (userCurrentIndex === userPollsQueue.length - 1) {
+                // XÓA BỎ dòng localStorage event_completed ở đây
                 finishAllVotes();
             } else {
                 showPollStep(userCurrentIndex + 1);
             }
         }, 400);
-
     } catch (e) {
-        S_Notify.alert("Lỗi kết nối, vui lòng thử lại", "error");
+        S_Notify.alert("Lỗi kết nối mạng!", "error");
     }
 }
 
@@ -1132,22 +1127,17 @@ async function handleRestore(isRestore) {
     async function activatePoll() {
     const titleInput = document.getElementById('vote-title');
     const title = titleInput.value.trim();
-
-    // 1. LOGIC MỚI: Lấy dữ liệu options (Nếu User không gõ thì tự lấy chữ trong Placeholder)
     const options = Array.from(document.querySelectorAll('.opt'))
         .map(i => i.value.trim() || i.placeholder.replace('...', '').trim()) 
         .filter(x => x);
 
-    // 2. LOGIC MỚI: KIỂM TRA TRÙNG TÊN PHƯƠNG ÁN
     const uniqueOptions = new Set(options);
     if (uniqueOptions.size !== options.length) {
-        S_Notify.alert("Lỗi: Tên các phương án bầu chọn không được trùng nhau!", "error");
-        return;
+        return S_Notify.alert("Lỗi: Tên các phương án không được trùng nhau!", "error");
     }
     
     if(!title || options.length < 2) {
-        S_Notify.alert("Vui lòng nhập đủ chủ đề và ít nhất 2 phương án", "error");
-        return;
+        return S_Notify.alert("Vui lòng nhập đủ chủ đề và phương án", "error");
     }
 
     if (editingPollId) {
@@ -1155,57 +1145,37 @@ async function handleRestore(isRestore) {
         const id = editingPollId;
         const snap = await rdb.ref('s_votes/polls/' + id).once('value');
         const oldData = snap.val();
-        
-        // Tăng version để mở khóa cho người dùng bầu lại
-        const newVersion = (oldData.v || 0) + 1;
+        const newVersion = (oldData.v || 1) + 1; // Tăng version lên
 
-        const updateData = {
-            title,
-            options,
-            v: newVersion,     
-            votes: null,       // XÓA SẠCH PHIẾU BẦU CŨ
-            isLocked: false,   // TỰ ĐỘNG MỞ CỔNG KHI SỬA XONG
-            ts: Date.now()     
-        };
-
-        await rdb.ref('s_votes/polls/' + id).update(updateData);
-        
-        // Reset trạng thái nút về ban đầu
-        const mainBtn = document.querySelector('button[onclick="activatePoll()"]');
-        mainBtn.innerHTML = `<i class="fa-solid fa-bolt"></i> KÍCH HOẠT & LƯU DANH SÁCH`;
-        mainBtn.style.background = ""; // Xóa màu Amber
+        await rdb.ref('s_votes/polls/' + id).update({
+            title, options, 
+            v: newVersion, 
+            votes: null, 
+            isLocked: false, 
+            ts: Date.now()
+        });
         
         editingPollId = null;
+        document.querySelector('button[onclick="activatePoll()"]').innerHTML = `<i class="fa-solid fa-bolt"></i> KÍCH HOẠT & LƯU DANH SÁCH`;
+        document.querySelector('button[onclick="activatePoll()"]').style.background = "";
         S_Notify.alert("Đã cập nhật và mở khóa bầu chọn!");
         loadPoll(id); 
     } else {
         // --- CHẾ ĐỘ TẠO MỚI ---
         const pollId = 'V-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-        // Khởi tạo thêm v: 1 và isLocked: false mặc định
-        const pollData = { 
-            title, 
-            options, 
-            v: 1, 
-            isLocked: false, 
-            ts: Date.now() 
-        }; 
-
+        const pollData = { title, options, v: 1, isLocked: false, ts: Date.now() }; 
         await rdb.ref('s_votes/polls/' + pollId).set(pollData);
         await rdb.ref('s_votes/active_event_list').child(pollId).set(true);
 
         let list = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
         list.push(pollId);
         localStorage.setItem('s_votes_all_ids', JSON.stringify(list));
-        localStorage.setItem('s_votes_active_id', pollId);
         loadPoll(pollId);
-        S_Notify.alert("Đã kích hoạt mục bầu chọn mới!");
     }
 
-    // 3. LOGIC LÀM SẠCH FORM (Sau khi bấm xác nhận sẽ trống để nhập cái tiếp theo)
     titleInput.value = "";
     document.getElementById('options-list').innerHTML = "";
-    addOptionField(); // Tự ra Ứng viên 1 (Mờ)
-    addOptionField(); // Tự ra Ứng viên 2 (Mờ)
+    addOptionField(); addOptionField();
     refreshPollList();
 }
 
@@ -1294,46 +1264,34 @@ async function loadPoll(id) {
     const data = snap.val();
     if(!data) return;
 
-    // Cập nhật giao diện báo cáo
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
-    // --- CẬP NHẬT TRẠNG THÁI NÚT KHÓA ---
+    // Cập nhật nút khóa
     const lockBtn = document.getElementById('btn-lock-toggle');
-    lockBtn.classList.remove('hidden'); // Hiện nút lên
-    
+    lockBtn.classList.remove('hidden');
     if (data.isLocked) {
         lockBtn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> TRẠNG THÁI: ĐÃ KHÓA`;
-        lockBtn.className = lockBtn.className.replace('text-slate-400', 'text-amber-500 border-amber-500 bg-amber-500/5');
+        lockBtn.className = "w-full py-3 mb-4 rounded-2xl border border-amber-500 bg-amber-500/5 text-amber-500 font-black uppercase text-[9px] tracking-[2px]";
     } else {
         lockBtn.innerHTML = `<i class="fa-solid fa-lock-open mr-2"></i> TRẠNG THÁI: ĐANG MỞ`;
-        lockBtn.className = lockBtn.className.replace('text-amber-500 border-amber-500 bg-amber-500/5', 'text-slate-400 border-white/10 bg-white/5');
+        lockBtn.className = "w-full py-3 mb-4 rounded-2xl border border-white/10 bg-white/5 text-slate-400 font-black uppercase text-[9px] tracking-[2px]";
     }
-    // 2. CHỈ CẬP NHẬT QR CODE
+
+    // --- CẬP NHẬT QR CODE (Thêm Version để QR thay đổi hình dạng) ---
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
 
-    const url = window.location.origin + window.location.pathname + "?mode=event";
+    // Thêm số version vào link để QR code thay đổi khi Admin Sửa
+    const url = window.location.origin + window.location.pathname + "?mode=event&v=" + (data.v || 1);
     lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
     
     const container = document.getElementById('qr-code');
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.src = lastQR;
-    img.className = "w-56 h-56 object-contain shadow-2xl rounded-xl";
-    img.onload = () => {
-        container.innerHTML = "";
-        container.appendChild(img);
-    };
+    container.innerHTML = `<img src="${lastQR}" class="w-56 h-56 object-contain shadow-2xl rounded-xl">`;
 
-    // 3. LẮNG NGHE DỮ LIỆU REAL-TIME
     listenResults(id);
-    
-    // 4. CẬP NHẬT TRẠNG THÁI ACTIVE TRÊN DANH SÁCH
     refreshPollList();
-    
-    // TUYỆT ĐỐI KHÔNG ĐỤNG CHẠM GÌ ĐẾN FORM NHẬP LIỆU Ở ĐÂY
 }
 
 async function prepareEditPoll(id) {
