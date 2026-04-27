@@ -957,20 +957,18 @@ async function renderEventPoll() {
     // 3. LỌC: Chỉ giữ lại những poll mà máy này CHƯA BẦU phiên bản mới nhất
     userPollsQueue = allPolls.filter(p => {
         const localVer = localStorage.getItem('voted_' + p.id);
-        // Nếu chưa có version trong máy HOẶC version máy < version server thì cho bầu
         return !localVer || parseInt(localVer) < (p.v || 1);
     });
-
-    userPollsQueue.sort((a, b) => a.ts - b.ts);
 
     if (userPollsQueue.length > 0) {
         showPollStep(0);
     } else {
+        // Chỉ hiện cái này nếu thực sự đã bầu hết sạch các poll đang có
         document.getElementById('success-overlay').style.display = 'flex';
     }
 }
 
-    function showPollStep(index) {
+function showPollStep(index) {
     if (index >= userPollsQueue.length) {
         finishAllVotes();
         return;
@@ -979,6 +977,8 @@ async function renderEventPoll() {
     userCurrentIndex = index;
     const poll = userPollsQueue[index];
     if (!poll) return;
+
+    currentId = poll.id; // THÊM DÒNG NÀY để luôn cập nhật ID hiện tại
 
     // Cập nhật thanh tiến trình
     const progress = ((index + 1) / userPollsQueue.length) * 100;
@@ -1843,11 +1843,10 @@ window.addEventListener('beforeunload', (e) => {
 // Hàm trung gian để xác nhận trước khi bầu
 function confirmVote(idx, name) {
     S_Notify.confirm(`Bạn có chắc chắn muốn bầu chọn cho: "${name.toUpperCase()}"?`, () => {
-        // Nếu đang ở chế độ Event (nhiều câu), gọi hàm lưu từng bước
-        if (typeof userPollsQueue !== 'undefined' && userPollsQueue.length > 1) {
+        // Sửa chỗ này: Thay > 1 thành > 0
+        if (typeof userPollsQueue !== 'undefined' && userPollsQueue.length > 0) {
             saveStepVote(idx, name);
         } else {
-            // Nếu chỉ có 1 câu đơn lẻ, gọi hàm kết thúc luôn
             submitVote(idx);
         }
     });
