@@ -1228,6 +1228,10 @@ async function handleRestore(isRestore) {
 // Hàm tải dữ liệu của một Poll cụ thể vào bảng báo cáo và QR
 async function loadPoll(id) {
     if(!id) return;
+    
+    // 1. NGẮT KẾT NỐI CHỦ ĐỀ CŨ TRƯỚC KHI SANG CÁI MỚI
+    if(currentId) rdb.ref('s_votes/polls/' + currentId).off();
+    
     currentId = id;
     localStorage.setItem('s_votes_active_id', id);
 
@@ -1235,10 +1239,18 @@ async function loadPoll(id) {
     const data = snap.val();
     if(!data) return;
 
+    // 2. XÓA TRẮNG GIAO DIỆN BIỂU ĐỒ CŨ (Quan trọng để không bị chồng lấp)
+    document.getElementById('vote-bars').innerHTML = ""; 
+
     document.getElementById('display-title').innerText = data.title;
     document.getElementById('live-indicator').classList.remove('hidden');
 
-    // Cập nhật nút khóa
+    // 3. Cập nhật mã QR (Có Version để điện thoại không cache trang cũ)
+    const url = window.location.origin + window.location.pathname + "?mode=event&v=" + (data.v || 1);
+    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+    document.getElementById('qr-code').innerHTML = `<img src="${lastQR}" class="w-56 h-56 object-contain shadow-2xl rounded-xl">`;
+
+    // 4. Hiện nút khóa và cập nhật trạng thái
     const lockBtn = document.getElementById('btn-lock-toggle');
     lockBtn.classList.remove('hidden');
     if (data.isLocked) {
@@ -1249,20 +1261,13 @@ async function loadPoll(id) {
         lockBtn.className = "w-full py-3 mb-4 rounded-2xl border border-white/10 bg-white/5 text-slate-400 font-black uppercase text-[9px] tracking-[2px]";
     }
 
-    // --- CẬP NHẬT QR CODE (Thêm Version để QR thay đổi hình dạng) ---
+    // 5. Bắt đầu lắng nghe dữ liệu real-time
+    listenResults(id);
+    refreshPollList();
+    
     const qrSection = document.getElementById('qr-section');
     qrSection.classList.remove('hidden');
     qrSection.classList.add('flex');
-
-    // Thêm số version vào link để QR code thay đổi khi Admin Sửa
-    const url = window.location.origin + window.location.pathname + "?mode=event&v=" + (data.v || 1);
-    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
-    
-    const container = document.getElementById('qr-code');
-    container.innerHTML = `<img src="${lastQR}" class="w-56 h-56 object-contain shadow-2xl rounded-xl">`;
-
-    listenResults(id);
-    refreshPollList();
 }
 
 async function prepareEditPoll(id) {
@@ -1370,7 +1375,8 @@ function listenResults(id) {
 
 // HÀM CHUYÊN BIỆT CHỈ ĐỂ VẼ BIỂU ĐỒ CỘT
 function renderBarChart() {
-    if (!lastPollData) return;
+    // Thêm check currentId để đảm bảo ID cột luôn duy nhất theo chủ đề
+    if (!lastPollData || !currentId) return;
 
     const data = lastPollData;
     const filterText = document.getElementById('table-filter').value.toLowerCase().trim();
@@ -1384,7 +1390,7 @@ function renderBarChart() {
 
     // 2. Chuẩn bị dữ liệu và Sắp xếp
     let chartData = data.options.map((name, index) => ({
-        realIndex: index, // ID gốc để giữ hiệu ứng mượt
+        realIndex: index, 
         name: name,
         votes: counts[index]
     }))
@@ -1395,7 +1401,7 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // 3. Khởi tạo khung nếu chưa có (Tránh trùng lặp cấu trúc)
+    // 3. Khởi tạo khung nếu chưa có
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
             <div class="chart-scroll-container" style="width:100%; overflow-x:auto; padding-bottom:120px; margin-top:20px;">
@@ -1419,22 +1425,21 @@ function renderBarChart() {
     frame.style.width = finalWidth + "px";
     const step = finalWidth / (itemsCount || 1);
     
-    // FIX: maxVotes luôn tối thiểu là 1 để tránh lỗi chia cho 0 (NaN)
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
     // 5. Cập nhật các cột
-    // Ẩn tạm thời các cột cũ
     frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
 
     chartData.forEach((item, index) => {
-        const colId = `col-opt-${item.realIndex}`;
+        // FIX LỖI NHẢY CỘT: ID phải kèm theo currentId để không bị lộn sang chủ đề khác
+        const colId = `col_${currentId}_${item.realIndex}`;
         let colEl = document.getElementById(colId);
         
         if (!colEl) {
             colEl = document.createElement('div');
             colEl.id = colId;
             colEl.className = 'column-item';
-            colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
+            colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
                 <div class="column-bar" style="width:45px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1s ease; position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.3);">
@@ -1445,14 +1450,10 @@ function renderBarChart() {
             frame.appendChild(colEl);
         }
 
-        // Hiện cột và cập nhật nội dung mới nhất
         colEl.style.display = 'flex';
         colEl.querySelector('.column-name').innerText = item.name;
 
-        // Vị trí X (Centered)
         const xPos = index * step + (step / 2) - 30;
-        
-        // Chiều cao (Đảm bảo tối thiểu 8px để thấy vạch mờ chân cột khi 0 phiếu)
         const hPx = Math.max(8, Math.floor((item.votes / maxVotes) * 280));
 
         colEl.style.transform = `translateX(${xPos}px)`;
@@ -1460,16 +1461,17 @@ function renderBarChart() {
         const bar = colEl.querySelector('.column-bar');
         const voteText = colEl.querySelector('.column-votes');
         
-        // Chạy hiệu ứng mọc cột
         setTimeout(() => {
             if(bar) bar.style.height = hPx + "px";
             if(voteText) voteText.innerText = item.votes;
         }, 50);
     });
 
-    // Xóa các cột rác không còn trong danh sách (nếu có)
+    // Xóa các cột không thuộc về chủ đề hiện tại hoặc không nằm trong bộ lọc
     frame.querySelectorAll('.column-item').forEach(el => {
-        if (!chartData.find(d => `col-opt-${d.realIndex}` === el.id)) el.remove();
+        const isCurrentSubject = el.id.startsWith(`col_${currentId}_`);
+        const isInFilter = chartData.find(d => `col_${currentId}_${d.realIndex}` === el.id);
+        if (!isCurrentSubject || !isInFilter) el.remove();
     });
 }
 
