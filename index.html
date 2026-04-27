@@ -1236,13 +1236,31 @@ async function loadPoll(id) {
     if(!data) return;
 
     document.getElementById('display-title').innerText = data.title;
-    
-    // Cập nhật QR Code - Thêm dấu vết Version để QR thay đổi hình dạng
-    const url = window.location.origin + window.location.pathname + "?mode=event&cache=" + (data.v || 1);
-    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
-    document.getElementById('qr-code').innerHTML = `<img src="${lastQR}" class="w-56 h-56 object-contain shadow-2xl rounded-xl">`;
+    document.getElementById('live-indicator').classList.remove('hidden');
 
-    // (Code cập nhật nút Khóa giữ nguyên như cũ...)
+    // Cập nhật nút khóa
+    const lockBtn = document.getElementById('btn-lock-toggle');
+    lockBtn.classList.remove('hidden');
+    if (data.isLocked) {
+        lockBtn.innerHTML = `<i class="fa-solid fa-lock mr-2"></i> TRẠNG THÁI: ĐÃ KHÓA`;
+        lockBtn.className = "w-full py-3 mb-4 rounded-2xl border border-amber-500 bg-amber-500/5 text-amber-500 font-black uppercase text-[9px] tracking-[2px]";
+    } else {
+        lockBtn.innerHTML = `<i class="fa-solid fa-lock-open mr-2"></i> TRẠNG THÁI: ĐANG MỞ`;
+        lockBtn.className = "w-full py-3 mb-4 rounded-2xl border border-white/10 bg-white/5 text-slate-400 font-black uppercase text-[9px] tracking-[2px]";
+    }
+
+    // --- CẬP NHẬT QR CODE (Thêm Version để QR thay đổi hình dạng) ---
+    const qrSection = document.getElementById('qr-section');
+    qrSection.classList.remove('hidden');
+    qrSection.classList.add('flex');
+
+    // Thêm số version vào link để QR code thay đổi khi Admin Sửa
+    const url = window.location.origin + window.location.pathname + "?mode=event&v=" + (data.v || 1);
+    lastQR = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(url)}`;
+    
+    const container = document.getElementById('qr-code');
+    container.innerHTML = `<img src="${lastQR}" class="w-56 h-56 object-contain shadow-2xl rounded-xl">`;
+
     listenResults(id);
     refreshPollList();
 }
