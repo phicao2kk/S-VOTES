@@ -486,7 +486,7 @@ img[alt="S-VOTES Logo"]:hover {
 
 /* Giới hạn hiện đúng 3 lựa chọn, từ cái thứ 4 sẽ hiện thanh cuộn */
 #options-list {
-    max-height: 255px; /* Chiều cao vừa đủ cho 3 hàng (mỗi hàng ~85px bao gồm cả khoảng cách mb-3) */
+    max-height: 175px; /* Giới hạn chiều cao vừa đủ cho 2 hàng */
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 8px;
@@ -618,6 +618,18 @@ img[alt="S-VOTES Logo"]:hover {
 .chart-scroll-container::-webkit-scrollbar-thumb {
     background: rgba(99, 102, 241, 0.5);
     border-radius: 10px;
+}
+
+/* Làm mờ chữ gợi ý (placeholder) */
+input::placeholder {
+    color: rgba(255, 255, 255, 0.2) !important;
+    font-weight: 400;
+    font-style: italic;
+}
+
+/* Khi đang gõ thì chữ hiện trắng rõ */
+input {
+    color: white !important;
 }
 
     </style>
@@ -869,7 +881,7 @@ img[alt="S-VOTES Logo"]:hover {
                     document.getElementById('restore-modal').style.display = 'flex';
                     currentId = savedId;
                 } else {
-                    addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
+                    addOptionField(); addOptionField();
                 }
                 refreshPollList();
             }
@@ -1015,8 +1027,8 @@ async function handleRestore(isRestore) {
         // Dọn sạch Form nhập liệu để Admin làm cái mới luôn
         document.getElementById('vote-title').value = "";
         document.getElementById('options-list').innerHTML = "";
-        addOptionField("Ứng viên A");
-        addOptionField("Ứng viên B");
+        addOptionField();
+        addOptionField();
 
         setTimeout(() => {
             if (typeof renderBarChart === 'function') renderBarChart();
@@ -1031,39 +1043,51 @@ async function handleRestore(isRestore) {
 
         function addOptionField(v = "") {
             const container = document.getElementById('options-list');
-            const div = document.createElement('div');
             
-            // Sử dụng mb-3 để tạo khoảng cách đều giữa các ô
+            // Tự động tính số thứ tự ứng viên nếu không truyền vào (1, 2, 3...)
+            if (!v) {
+                const count = container.querySelectorAll('div').length;
+                v = `Ứng viên ${count + 1}...`; // count bắt đầu từ 0 nên +1 để ra 1, 2, 3...
+            }
+
+            const div = document.createElement('div');
             div.className = "flex items-center gap-3 mb-3 animate-in fade-in slide-in-from-left-2 duration-300"; 
             
             div.innerHTML = `
-                <input type="text" class="opt flex-1 p-5 rounded-2xl font-bold" value="${v}">
+                <input type="text" class="opt flex-1 p-5 rounded-2xl font-bold" placeholder="${v}" value="">
                 <button onclick="this.parentElement.remove()" class="btn-del text-slate-600 hover:text-red-500 px-3 transition-colors">
                     <i class="fa-solid fa-circle-xmark"></i>
                 </button>`;
             
             container.appendChild(div);
 
-            // Cuộn xuống cuối cùng của danh sách phương án
-            // Dùng setTimeout để đảm bảo trình duyệt đã render xong phần tử mới trước khi tính toán scrollHeight
+            // Lấy ô input vừa tạo
+            const newInput = div.querySelector('input');
+
+            // Đợi trình duyệt render xong rồi cuộn và focus
             setTimeout(() => {
+                // Cuộn xuống cuối danh sách để thấy ô mới thêm
                 container.scrollTo({
                     top: container.scrollHeight,
                     behavior: 'smooth'
                 });
-            }, 10);
-            
-            // Tự động focus vào ô mới thêm
-            div.querySelector('input').focus();
+                
+                // Tự động đặt con trỏ vào ô mới để người dùng gõ phím ngay
+                newInput.focus();
+            }, 50); 
         }
 
         async function activatePoll() {
             const titleInput = document.getElementById('vote-title');
             const title = titleInput.value.trim();
-            const options = Array.from(document.querySelectorAll('.opt')).map(i => i.value.trim()).filter(x => x);
+
+            // THAY ĐỔI: Nếu giá trị (value) trống, thì lấy placeholder
+            const options = Array.from(document.querySelectorAll('.opt'))
+                .map(i => i.value.trim() || i.placeholder.trim()) 
+                .filter(x => x);
             
             if(!title || options.length < 2) {
-                S_Notify.alert("Vui lòng nhập đủ chủ đề và phương án", "error");
+                S_Notify.alert("Vui lòng nhập đủ chủ đề và ít nhất 2 phương án", "error");
                 return;
             }
 
@@ -1096,7 +1120,7 @@ async function handleRestore(isRestore) {
 
             titleInput.value = "";
             document.getElementById('options-list').innerHTML = "";
-            addOptionField("Ứng viên A"); addOptionField("Ứng viên B");
+            addOptionField(); addOptionField();
 
             S_Notify.alert("Đã kích hoạt mục mới!");
         }
@@ -1260,8 +1284,8 @@ async function loadPoll(id) {
 
             // 3. Xóa danh sách lựa chọn cũ và tạo lại 2 ô mặc định
             document.getElementById('options-list').innerHTML = "";
-            addOptionField("Ứng viên A");
-            addOptionField("Ứng viên B");
+            addOptionField();
+            addOptionField();
 
             // 4. Reset giao diện QR và Báo cáo
             document.getElementById('qr-section').classList.add('hidden');
@@ -1296,23 +1320,31 @@ function renderBarChart() {
     if (!lastPollData) return;
 
     const data = lastPollData;
-    const filterText = document.getElementById('table-filter').value.toLowerCase();
+    // Lấy giá trị lọc và làm sạch (xóa khoảng trắng, chuyển về chữ thường)
+    const filterText = document.getElementById('table-filter').value.toLowerCase().trim();
     
     const votes = data.votes ? Object.values(data.votes) : [];
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
-    let chartData = data.options.map((name, index) => ({
+    // Bước 1: Tạo mảng dữ liệu gốc
+    let allData = data.options.map((name, index) => ({
         id: `col-opt-${index}`, 
         name: name,
         votes: counts[index]
-    })).sort((a, b) => b.votes - a.votes);
+    }));
+
+    // Bước 2: LỌC dữ liệu dựa trên ô tìm kiếm
+    let filteredData = allData.filter(item => item.name.toLowerCase().includes(filterText));
+
+    // Bước 3: Sắp xếp dữ liệu đã lọc (để cột cao nhất luôn đứng đầu trong kết quả lọc)
+    filteredData.sort((a, b) => b.votes - a.votes);
 
     const container = document.getElementById('vote-bars');
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // TẠO CẤU TRÚC KHUNG CUỘN
+    // TẠO CẤU TRÚC KHUNG CUỘN (Chỉ tạo một lần)
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
             <div class="chart-scroll-container">
@@ -1326,17 +1358,21 @@ function renderBarChart() {
     const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
     
-    // TÍNH ĐỘ RỘNG ĐỘNG: Mỗi cột 100px, tối thiểu là bằng độ rộng khung nhìn
+    // TÍNH ĐỘ RỘNG ĐỘNG dựa trên số lượng cột SAU KHI LỌC
     const minColWidth = 100;
-    const itemsCount = chartData.length;
+    const itemsCount = filteredData.length;
     const neededWidth = (itemsCount + 1) * minColWidth;
     const finalWidth = Math.max(scrollWin.clientWidth - 50, neededWidth);
     
     frame.style.width = finalWidth + "px";
     const step = finalWidth / (itemsCount + 1);
-    const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
+    const maxVotes = Math.max(...allData.map(d => d.votes), 1);
 
-    chartData.forEach((item, index) => {
+    // Ẩn tất cả các cột cũ trước khi vẽ vị trí mới
+    frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
+
+    // Vẽ và cập nhật vị trí cho những cột thỏa mãn điều kiện lọc
+    filteredData.forEach((item, index) => {
         let colEl = document.getElementById(item.id);
         
         if (!colEl) {
@@ -1355,9 +1391,12 @@ function renderBarChart() {
             void colEl.offsetHeight;
         }
 
-        // Tính vị trí X dựa trên finalWidth đã giãn rộng
+        // Hiện cột lên
+        colEl.style.display = 'flex';
+
+        // TÍNH TOÁN VỊ TRÍ X: Quan trọng nhất, index ở đây là index trong mảng đã lọc
         const xPos = (index + 1) * step - 30;
-        const hPx = Math.floor((item.votes / maxVotes) * 280); // Cao tối đa 280px cho thoáng
+        const hPx = Math.floor((item.votes / maxVotes) * 280);
 
         colEl.style.transform = `translateX(${xPos}px)`;
         
@@ -1367,12 +1406,6 @@ function renderBarChart() {
             if (bar) bar.style.height = hPx + "px";
             if (voteText) voteText.innerText = item.votes;
         }, 100);
-
-        colEl.style.display = item.name.toLowerCase().includes(filterText) ? "flex" : "none";
-    });
-
-    frame.querySelectorAll('.column-item').forEach(el => {
-        if (!chartData.find(d => d.id === el.id)) el.remove();
     });
 }
 
@@ -1445,31 +1478,33 @@ function filterTable() {
             const card = document.getElementById('qr-card-capture');
             if (!card) return S_Notify.alert("Không tìm thấy khung QR!", "error");
 
+            // Lấy tiêu đề đang hiển thị trên báo cáo để đặt tên file cho hay
+            const pollTitle = document.getElementById('display-title').innerText.trim() || 'PRO';
+
             try {
                 S_Notify.alert("Đang chuẩn bị file ảnh...");
 
-                // 1. Tìm tia laser
                 const laser = card.querySelector('.laser-line');
-                
-                // 2. Ẩn tia laser bằng display: none để html2canvas không nhìn thấy nó
                 if(laser) laser.style.display = 'none';
 
-                // 3. Chụp ảnh (Thêm một chút delay nhỏ để trình duyệt kịp ẩn laser)
                 await new Promise(resolve => setTimeout(resolve, 100)); 
 
                 const canvas = await html2canvas(card, {
-                    scale: 4, // Tăng độ nét lên mức 4
+                    scale: 4, 
                     useCORS: true, 
-                    backgroundColor: "#ffffff", // Ép nền trắng tinh
+                    backgroundColor: "#ffffff",
                     removeContainer: true
                 });
 
-                // 4. Hiện lại tia laser cho giao diện web sau khi chụp xong
                 if(laser) laser.style.display = 'block';
 
-                // 5. Tải file
                 const link = document.createElement('a');
-                link.download = `S-VOTES_QR_${currentId || 'PRO'}.png`;
+
+                // --- ĐỔI TÊN FILE TẠI ĐÂY ---
+                // File tải về sẽ có dạng: Mã QR_TÊN CUỘC BẦU CHỌN.png
+                // Ví dụ: Mã QR_BẦU LỚP TRƯỞNG.png
+                link.download = `Mã QR_${pollTitle}.png`;
+
                 link.href = canvas.toDataURL("image/png");
                 link.click();
 
@@ -1485,144 +1520,155 @@ function filterTable() {
             return new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
         }
 
-        // Hàm lọc dữ liệu trên bảng web
-        function filterTable() {
-            const val = document.getElementById('table-filter').value.toLowerCase();
-            const rows = document.querySelectorAll('#table-body tr');
-            rows.forEach(row => {
-                const text = row.innerText.toLowerCase();
-                row.style.display = text.includes(val) ? '' : 'none';
-            });
-        }
 
         // HÀM XUẤT EXCEL CÓ ĐỊNH DẠNG CHUẨN NHƯ HÌNH
 async function exportExcel() {
     const listIds = JSON.parse(localStorage.getItem('s_votes_all_ids') || "[]");
     
     if (listIds.length === 0) {
-        return S_Notify.alert("Danh sách trống, không có gì để xuất!", "error");
+        return S_Notify.alert("Hệ thống chưa có dữ liệu bình chọn!", "error");
     }
 
     try {
-        S_Notify.alert("Đang gộp dữ liệu và định dạng trang...");
+        S_Notify.alert("Đang kiến tạo biên bản chuẩn Pro...");
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('BÁO CÁO TỔNG HỢP');
-        let allTitles = []; // Thu thập tên cho file
-
-        // 1. KHÓA CỘT A VÀ KHÓA 2 DÒNG ĐẦU (Freeze Panes)
-        worksheet.views = [
-            { state: 'frozen', xSplit: 1, ySplit: 2 }
-        ];
-
-        // 2. SET ĐỘ RỘNG CỘT CỰC RỘNG (Chống cắt chữ)
-        worksheet.getColumn(1).width = 10; // Cột A: STT
-        worksheet.getColumn(2).width = 65; // Cột B: Phương án (Rộng hẳn ra)
-        worksheet.getColumn(3).width = 20; // Cột C: Số lượt bầu
-        worksheet.getColumn(4).width = 18; // Cột D: Tỷ lệ %
+        const worksheet = workbook.addWorksheet('KẾT QUẢ KIỂM PHIẾU');
+        
+        // 1. Cấu hình độ rộng cột (Rộng rãi hơn)
+        worksheet.getColumn(1).width = 8;  // STT
+        worksheet.getColumn(2).width = 55; // Danh sách ứng viên
+        worksheet.getColumn(3).width = 18; // Số phiếu
+        worksheet.getColumn(4).width = 15; // Tỷ lệ %
 
         let currentRow = 1;
 
-        // 3. HEADER TỔNG CỦA CẢ SHEET (Dòng 1 & 2)
+        const pollSnaps = await Promise.all(listIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
+        const allPolls = pollSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
+
+        // 2. TIÊU ĐỀ CHÍNH (Trang trọng)
         worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
         const mainHeader = worksheet.getCell(`A${currentRow}`);
-        mainHeader.value = 'HỆ THỐNG BÌNH CHỌN S-VOTES PRO - BÁO CÁO TỔNG HỢP';
-        mainHeader.font = { name: 'Times New Roman', size: 20, bold: true, color: { argb: 'FF1E40AF' } };
+        mainHeader.value = 'BIÊN BẢN KẾT QUẢ BÌNH CHỌN ĐIỆN TỬ';
+        mainHeader.font = { name: 'Times New Roman', size: 20, bold: true, color: { argb: 'FF1E3A8A' } };
         mainHeader.alignment = { horizontal: 'center', vertical: 'middle' };
         currentRow++;
 
         worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
-        const subMainHeader = worksheet.getCell(`A${currentRow}`);
-        subMainHeader.value = `Ngày xuất báo cáo: ${getVNDate()}`;
-        subMainHeader.font = { name: 'Times New Roman', size: 12, italic: true };
-        subMainHeader.alignment = { horizontal: 'center' };
-        currentRow += 2; // Cách ra 1 dòng trắng
+        const subHeader = worksheet.getCell(`A${currentRow}`);
+        subHeader.value = `Hệ thống: S-VOTES PRO SYSTEM | Thời gian chốt: ${new Date().toLocaleString('vi-VN')}`;
+        subHeader.font = { name: 'Times New Roman', size: 11, italic: true, color: { argb: 'FF475569' } };
+        subHeader.alignment = { horizontal: 'center' };
+        currentRow += 2; // Cách 1 dòng trắng
 
-        // 4. VÒNG LẶP ĐỔ TỪNG BẢNG BÌNH CHỌN
-        for (const [idx, pollId] of listIds.entries()) {
-            const snap = await rdb.ref('s_votes/polls/' + pollId).once('value');
-            const data = snap.val();
-            if (data) allTitles.push(data.title);
-            if (!data) continue;
-
-            const votes = data.votes ? Object.values(data.votes) : [];
-            const counts = new Array(data.options.length).fill(0);
+        // 3. VẼ TỪNG BẢNG KIỂM PHIẾU
+        allPolls.forEach((poll, pIdx) => {
+            const votes = poll.votes ? Object.values(poll.votes) : [];
+            const counts = new Array(poll.options.length).fill(0);
             votes.forEach(v => counts[v]++);
 
-            // Tiêu đề của từng cuộc bầu chọn
+            // Dòng Nội dung (Banner tối)
             worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
-            const pollTitleCell = worksheet.getCell(`A${currentRow}`);
-            pollTitleCell.value = `${idx + 1}. ${data.title.toUpperCase()}`;
-            pollTitleCell.font = { name: 'Times New Roman', size: 14, bold: true };
-            pollTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-            pollTitleCell.border = { bottom: { style: 'thin' } };
+            const titleCell = worksheet.getCell(`A${currentRow}`);
+            titleCell.value = `${pIdx + 1}. CHỦ ĐỀ: ${poll.title.toUpperCase()}`;
+            titleCell.font = { name: 'Times New Roman', bold: true, color: { argb: 'FFFFFFFF' } };
+            titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+            titleCell.alignment = { vertical: 'middle', indent: 1 };
             currentRow++;
 
-            // Tiêu đề cột (Dòng màu xanh)
-            const headerRow = worksheet.getRow(currentRow);
-            headerRow.values = ['STT', 'PHƯƠNG ÁN BẦU CHỌN', 'SỐ LƯỢT BẦU', 'TỶ LỆ %'];
-            headerRow.height = 25; // Tăng chiều cao dòng tiêu đề
-            headerRow.eachCell((cell) => {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF003399' } };
-                cell.font = { color: { argb: 'FFFFFFFF' }, bold: true, name: 'Times New Roman', size: 11 };
+            // Lưu lại vị trí dòng header để đặt bộ lọc
+            const headerRowNumber = currentRow;
+            const headRow = worksheet.getRow(headerRowNumber);
+            headRow.values = ['STT', 'DANH SÁCH ỨNG VIÊN / PHƯƠNG ÁN', 'SỐ PHIẾU', 'TỶ LỆ %'];
+            headRow.height = 25;
+
+            // Định dạng Header Table
+            headRow.eachCell((cell) => {
+                cell.font = { name: 'Times New Roman', bold: true, size: 11 };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
                 cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                cell.border = { 
-                    top: {style:'thin'}, left: {style:'thin'}, 
-                    bottom: {style:'thin'}, right: {style:'thin'} 
+                // Kẻ khung đậm cho Header
+                cell.border = {
+                    top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'medium'}, right: {style:'thin'}
                 };
             });
             currentRow++;
 
-            // Đổ dữ liệu nội dung
-            data.options.forEach((opt, i) => {
+            // Đổ dữ liệu và kẻ khung từng ô
+            poll.options.forEach((opt, oIdx) => {
                 const row = worksheet.getRow(currentRow);
-                row.values = [
-                    i + 1,
-                    opt,
-                    counts[i],
-                    ((counts[i] / (votes.length || 1)) * 100).toFixed(1) + '%'
-                ];
-                row.height = 22; // Tăng chiều cao dòng cho thoáng
-                row.eachCell((cell) => {
+                const percent = votes.length > 0 ? ((counts[oIdx] / votes.length) * 100).toFixed(1) : "0.0";
+                
+                row.values = [oIdx + 1, opt, counts[oIdx], percent + '%'];
+                row.height = 22;
+
+                row.eachCell((cell, colNumber) => {
                     cell.font = { name: 'Times New Roman', size: 11 };
-                    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; // wrapText để tự xuống dòng nếu quá dài
-                    cell.border = { 
-                        top: {style:'thin'}, left: {style:'thin'}, 
-                        bottom: {style:'thin'}, right: {style:'thin'} 
+                    cell.border = {
+                        top: {style:'thin'}, left: {style:'thin'}, bottom: {style:'thin'}, right: {style:'thin'}
                     };
+                    // Căn giữa STT, Số phiếu, Tỷ lệ
+                    if (colNumber !== 2) {
+                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    } else {
+                        cell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+                    }
+                    // Tô màu xen kẽ cho dễ nhìn (Zebra stripes)
+                    if (currentRow % 2 === 0) {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                    }
                 });
                 currentRow++;
             });
 
-            // Footer nhỏ của từng bảng
-            worksheet.mergeCells(`A${currentRow}:D${currentRow}`);
-            const miniFooter = worksheet.getCell(`A${currentRow}`);
-            miniFooter.value = `* Tổng số phiếu: ${votes.length} phiếu - Thời gian lưu: ${new Date(data.ts).toLocaleString()}`;
-            miniFooter.font = { name: 'Times New Roman', size: 9, italic: true, color: { argb: 'FF555555' } };
-            miniFooter.alignment = { horizontal: 'right' };
+            // THÊM BỘ LỌC (AutoFilter) cho bảng này
+            worksheet.autoFilter = {
+                from: { row: headerRowNumber, column: 1 },
+                to: { row: currentRow - 1, column: 4 }
+            };
+
+            // Dòng Tổng kết
+            const footRow = worksheet.getRow(currentRow);
+            footRow.values = ['', 'TỔNG SỐ PHIẾU:', votes.length, '100%'];
+            footRow.font = { name: 'Times New Roman', bold: true, size: 11, color: { argb: 'FF059669' } };
+            footRow.getCell(2).alignment = { horizontal: 'right' };
             
-            currentRow += 3; // Khoảng cách giữa các bảng
-        }
+            // Kẻ khung cho dòng tổng kết nếu cần
+            for(let i=2; i<=4; i++) {
+                footRow.getCell(i).border = { top: {style:'medium'} };
+            }
 
-        // 5. XUẤT FILE
-        // 5. XUẤT FILE VỚI TÊN ĐỘNG
+            currentRow += 3; // Khoảng cách giữa các cuộc bầu chọn
+        });
+
+        // 4. XUẤT FILE
+        // --- ĐOẠN XỬ LÝ TÊN FILE THÔNG MINH ---
+        const now = new Date();
+        const dateStr = `${now.getDate().toString().padStart(2, '0')}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getFullYear()}_${now.getHours()}h${now.getMinutes()}`;
+
+        let fileName = "";
+        if (allPolls.length === 1) {
+            // Trường hợp chỉ có 1 nội dung: Lấy tên nội dung đó làm tên file
+            // Xóa bỏ các ký tự đặc biệt có thể gây lỗi lưu file
+            const safeTitle = allPolls[0].title
+                .toUpperCase()
+                .replace(/\s+/g, '_') // Thay khoảng trắng bằng gạch dưới
+                .replace(/[^\w\u00C0-\u1EF9]/g, ''); // Chỉ giữ lại chữ và số
+                
+            fileName = `BIEN_BAN_KET_QUA_${safeTitle}_[${dateStr}].xlsx`;
+        } else {
+            // Trường hợp xuất nhiều nội dung (Tổng hợp)
+            fileName = `BIEN_BAN_TONG_HOP_KET_QUA_KIEM_PHIEU_${allPolls.length}_MUC_[${dateStr}].xlsx`;
+        }
+        // --------------------------------------
+
+        // Sau đó dùng nó để tải file:
         const buffer = await workbook.xlsx.writeBuffer();
-        
-        // Gộp các tiêu đề lại bằng dấu " + ", xóa ký tự đặc biệt để tránh lỗi file
-        let combinedName = allTitles.join(' + ').replace(/[\\/:*?"<>|]/g, '');
-        
-        // Giới hạn chiều dài tên file (tránh lỗi Windows nếu quá 255 ký tự)
-        if (combinedName.length > 150) {
-            combinedName = combinedName.substring(0, 147) + '...';
-        }
-
-        const finalFileName = `Báo cáo tổng hợp ${combinedName}.xlsx`;
-
-        saveAs(new Blob([buffer]), finalFileName);
-        S_Notify.alert("Xuất báo cáo tổng hợp thành công!");
+        saveAs(new Blob([buffer]), fileName);
+        S_Notify.alert("Đã xuất biên bản chuyên nghiệp có bộ lọc!");
 
     } catch (error) {
-        console.error("Lỗi Excel:", error);
-        S_Notify.alert("Lỗi: " + error.message, "error");
+        console.error("Lỗi:", error);
+        S_Notify.alert("Lỗi xuất file, vui lòng kiểm tra lại!", "error");
     }
 }
 
@@ -1733,8 +1779,8 @@ function clearPollForm() {
     list.innerHTML = "";
     
     // 3. Thêm lại 2 ô mặc định cho sang
-    addOptionField("Ứng viên A");
-    addOptionField("Ứng viên B");
+    addOptionField();
+    addOptionField();
     
     // 4. Focus vào ô tiêu đề để gõ luôn
     titleInput.focus();
