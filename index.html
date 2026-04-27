@@ -474,9 +474,11 @@ img[alt="S-VOTES Logo"]:hover {
     padding: 10px 15px;
     color: white;
     font-size: 12px;
-    width: 250px;
+    width: 100%; /* Thay đổi từ 250px thành 100% */
+    max-width: 250px; /* Thêm dòng này để giới hạn độ rộng trên máy tính */
     transition: all 0.3s;
 }
+
 .filter-box:focus {
     border-color: #6366f1;
     box-shadow: 0 0 15px rgba(99,102,241,0.2);
@@ -730,17 +732,21 @@ img[alt="S-VOTES Logo"]:hover {
 
             <!-- CỘT BÁO CÁO (8) -->
             <div class="lg:col-span-8 glass p-8 lg:p-12 rounded-[48px] min-h-[750px] flex flex-col relative overflow-hidden">
-                <div class="flex justify-between items-center mb-8">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8">
                     <div class="space-y-1">
-                        <h2 id="display-title" class="text-3xl font-black italic uppercase tracking-tighter">BÁO CÁO CHI TIẾT</h2>
+                        <h2 id="display-title" class="text-3xl font-black italic uppercase tracking-tighter leading-tight">BÁO CÁO CHI TIẾT</h2>
                         <p class="text-[10px] text-slate-500 font-black uppercase tracking-[4px]">Hệ thống bình chọn tự động</p>
                     </div>
-                    <div class="flex items-center gap-4">
-                        <!-- Ô lọc dữ liệu nhanh -->
-                        <input type="text" id="table-filter" oninput="filterTable()" placeholder="🔍 Lọc phương án..." class="filter-box">
+                    
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <!-- Ô lọc sẽ co giãn theo màn hình -->
+                        <input type="text" id="table-filter" oninput="filterTable()" placeholder="🔍 Lọc phương án..." class="filter-box flex-1 sm:w-60">
                         
-                        <button onclick="exportExcel()" class="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase hover:scale-105 active:scale-95 transition-all shadow-lg shadow-emerald-500/20">
-                            <i class="fa-solid fa-file-excel"></i> XUẤT EXCEL (PRO)
+                        <!-- Nút xuất Excel sẽ không bị ngắt dòng và giữ nguyên vị trí -->
+                        <button onclick="exportExcel()" class="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase whitespace-nowrap hover:scale-105 active:scale-95 transition-all shadow-lg shadow-emerald-500/20">
+                            <i class="fa-solid fa-file-excel"></i> 
+                            <span class="hidden xs:inline">XUẤT EXCEL (PRO)</span>
+                            <span class="xs:hidden">XUẤT</span>
                         </button>
                     </div>
                 </div>
