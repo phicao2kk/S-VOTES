@@ -935,7 +935,6 @@ input.opt::placeholder {
         let userAnswers = {};
 
 async function renderEventPoll() {
-    // 1. XÓA BỎ đoạn check event_completed ở đây
     document.getElementById('view-admin').classList.add('hidden');
     document.getElementById('view-user').classList.remove('hidden');
 
@@ -953,7 +952,7 @@ async function renderEventPoll() {
     const pSnaps = await Promise.all(activeIds.map(id => rdb.ref('s_votes/polls/' + id).once('value')));
     const allPolls = pSnaps.map(s => ({ id: s.key, ...s.val() })).filter(p => p.title);
 
-    // 2. LỌC THÔNG MINH: Chỉ hiện những câu chưa bầu hoặc version mới hơn
+    // LOGIC FIX: Lọc những câu có Version mới hơn cái đã bầu trong máy
     userPollsQueue = allPolls.filter(p => {
         const localVer = localStorage.getItem('voted_' + p.id);
         return !localVer || parseInt(localVer) < (p.v || 1);
@@ -964,7 +963,6 @@ async function renderEventPoll() {
     if (userPollsQueue.length > 0) {
         showPollStep(0);
     } else {
-        // Nếu đã bầu hết version mới nhất rồi thì mới hiện thông báo
         document.getElementById('success-overlay').style.display = 'flex';
     }
 }
@@ -1498,60 +1496,59 @@ function filterTable() {
     renderBarChart();
 }
 
-       async function renderUserPoll(id) {
-            // KIỂM TRA: Nếu máy này đã bầu cho pollId này
-            if(localStorage.getItem('voted_' + id)) {
-                document.getElementById('success-overlay').style.display = 'flex';
-                return;
-            }
-            document.getElementById('view-admin').classList.add('hidden');
-            document.getElementById('view-user').classList.remove('hidden');
-            const snap = await rdb.ref('s_votes/polls/' + id).once('value');
-            const data = snap.val(); 
-            currentId = id;
-            
-            document.getElementById('u-title').innerText = data.title;
-            // ĐỔI onclick THÀNH confirmVote
-            document.getElementById('u-options').innerHTML = data.options.map((opt, i) => `
-                <button onclick="confirmVote(${i}, '${opt}')" class="glass p-10 rounded-[40px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
-                    <span class="text-2xl font-black uppercase italic group-hover:text-indigo-400">${opt}</span>
-                    <i class="fa-solid fa-chevron-right text-slate-800 group-hover:text-indigo-500"></i>
-                </button>`).join('');
-        }
+async function renderUserPoll(id) {
+    const snap = await rdb.ref('s_votes/polls/' + id).once('value');
+    const data = snap.val(); 
+    if (!data) return;
 
-        async function submitVote(idx) {
-            // 1. KIỂM TRA: Nếu máy này đã có dấu vết đã bầu cho pollId này thì chặn
-            if(localStorage.getItem('voted_' + currentId)) {
-                S_Notify.alert("Thiết bị này đã thực hiện bình chọn rồi!", "error");
-                // Tự động hiện màn hình thành công sau 1.5s để người dùng biết họ đã xong
-                setTimeout(() => {
-                    document.getElementById('success-overlay').style.display = 'flex';
-                }, 1500);
-                return;
-            }
+    currentId = id;
 
-            if (window.navigator.vibrate) window.navigator.vibrate(50);
+    // LOGIC FIX: So sánh Version
+    const localVer = localStorage.getItem('voted_' + id);
+    if (localVer && parseInt(localVer) >= (data.v || 1)) {
+        document.getElementById('success-overlay').style.display = 'flex';
+        return;
+    }
 
-            try {
-                await rdb.ref(`s_votes/polls/${currentId}/votes`).push(idx);
-                
-                // 2. ĐÁNH DẤU: Lưu dấu vết vào máy người dùng
-                localStorage.setItem('voted_' + currentId, 'true');
-                
-                const overlay = document.getElementById('success-overlay');
-                overlay.style.display = 'flex';
-                
-                confetti({
-                    particleCount: 150,
-                    spread: 70,
-                    origin: { y: 0.6 },
-                    colors: ['#10b981', '#34d399', '#ffffff']
-                });
-            } catch (e) {
-                console.error(e);
-                S_Notify.alert("Lỗi kết nối mạng!", "error");
-            }
-        }
+    document.getElementById('view-admin').classList.add('hidden');
+    document.getElementById('view-user').classList.remove('hidden');
+    document.getElementById('u-title').innerText = data.title;
+
+    document.getElementById('u-options').innerHTML = data.options.map((opt, i) => `
+        <button onclick="confirmVote(${i}, '${opt}')" class="glass p-10 rounded-[40px] text-left hover:border-indigo-500/50 flex justify-between items-center group">
+            <span class="text-2xl font-black uppercase italic group-hover:text-indigo-400">${opt}</span>
+            <i class="fa-solid fa-chevron-right text-slate-800 group-hover:text-indigo-500"></i>
+        </button>`).join('');
+}
+
+async function submitVote(idx) {
+    // Tải dữ liệu mới nhất từ Firebase để lấy số Version hiện tại
+    const snap = await rdb.ref('s_votes/polls/' + currentId).once('value');
+    const poll = snap.val();
+    
+    const localVer = localStorage.getItem('voted_' + currentId);
+
+    // LOGIC FIX: Chỉ chặn nếu Version trong máy LỚN HƠN HOẶC BẰNG Version trên server
+    if (localVer && parseInt(localVer) >= (poll.v || 1)) {
+        S_Notify.alert("Bạn đã thực hiện bình chọn cho phiên bản này rồi!", "error");
+        document.getElementById('success-overlay').style.display = 'flex';
+        return;
+    }
+
+    if (window.navigator.vibrate) window.navigator.vibrate(50);
+
+    try {
+        await rdb.ref(`s_votes/polls/${currentId}/votes`).push(idx);
+        
+        // LƯU LẠI VERSION VỪA BẦU XONG
+        localStorage.setItem('voted_' + currentId, poll.v || 1);
+        
+        document.getElementById('success-overlay').style.display = 'flex';
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+    } catch (e) {
+        S_Notify.alert("Lỗi kết nối mạng!", "error");
+    }
+}
 
     function zoomQR() { 
     if(!lastQR) return S_Notify.alert("Chưa có mã QR!", "error");
