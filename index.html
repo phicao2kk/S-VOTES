@@ -1402,16 +1402,16 @@ function renderBarChart() {
     const data = lastPollData;
     const filterText = document.getElementById('table-filter').value.toLowerCase().trim();
     
-    // 1. Kiểm đếm phiếu bầu (Tallying)
+    // 1. Kiểm đếm phiếu bầu
     const votes = data.votes ? Object.values(data.votes) : [];
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => {
         if (counts[v] !== undefined) counts[v]++;
     });
 
-    // 2. Chuẩn bị dữ liệu và Sắp xếp (Người nhiều phiếu nhất đứng đầu)
+    // 2. Chuẩn bị dữ liệu và Sắp xếp
     let chartData = data.options.map((name, index) => ({
-        realIndex: index, // Lưu lại vị trí gốc để đối chiếu với Firebase
+        realIndex: index, // ID gốc để giữ hiệu ứng mượt
         name: name,
         votes: counts[index]
     }))
@@ -1422,10 +1422,10 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
-    // 3. Khởi tạo hoặc dọn dẹp khung vẽ
+    // 3. Khởi tạo khung nếu chưa có (Tránh trùng lặp cấu trúc)
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
-            <div class="chart-scroll-container" style="width:100%; overflow-x:auto; padding-bottom:100px;">
+            <div class="chart-scroll-container" style="width:100%; overflow-x:auto; padding-bottom:120px; margin-top:20px;">
                 <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid rgba(255,255,255,0.3); border-bottom:3px solid rgba(255,255,255,0.3); margin-left:40px; overflow:visible;">
                     <div class="axis-label-y" style="color:#6366f1; font-weight:800; position:absolute; top:-40px; left:-10px; font-size:11px; font-style:italic; white-space:nowrap;">SỐ PHIẾU ▲</div>
                     <div class="axis-label-x" style="color:#6366f1; font-weight:800; position:absolute; bottom:-60px; right:0; font-size:11px; font-style:italic;">▶ PHƯƠNG ÁN</div>
@@ -1436,22 +1436,25 @@ function renderBarChart() {
     const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
     
-    // 4. Tính toán độ rộng động cho trục Ox
+    // 4. Tính toán độ rộng động dựa trên tên dài nhất
     const maxChars = chartData.length > 0 ? Math.max(...chartData.map(d => d.name.length)) : 0;
-    const minColWidth = Math.max(130, (maxChars * 9) + 40); 
+    const minColWidth = Math.max(140, (maxChars * 9) + 40); 
+    
     const itemsCount = chartData.length;
     const finalWidth = Math.max(scrollWin.clientWidth - 80, itemsCount * minColWidth);
     
     frame.style.width = finalWidth + "px";
     const step = finalWidth / (itemsCount || 1);
+    
+    // FIX: maxVotes luôn tối thiểu là 1 để tránh lỗi chia cho 0 (NaN)
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
 
-    // 5. Quản lý các cột (Tạo mới hoặc cập nhật)
-    // Ẩn tất cả các cột đang có trong DOM trước
+    // 5. Cập nhật các cột
+    // Ẩn tạm thời các cột cũ
     frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
 
     chartData.forEach((item, index) => {
-        const colId = `col-opt-${item.realIndex}`; // Dùng index gốc để giữ ID cố định cho hiệu ứng transition
+        const colId = `col-opt-${item.realIndex}`;
         let colEl = document.getElementById(colId);
         
         if (!colEl) {
@@ -1461,33 +1464,39 @@ function renderBarChart() {
             colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
-                <div class="column-bar" style="width:45px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:5px; transition:height 1s ease; position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.3);">
-                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
+                <div class="column-bar" style="width:45px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1s ease; position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.3);">
+                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px;">0</span>
                 </div>
                 <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; width:max-content; text-align:center;"></span>
             `;
             frame.appendChild(colEl);
         }
 
-        // Hiện cột và cập nhật nội dung
+        // Hiện cột và cập nhật nội dung mới nhất
         colEl.style.display = 'flex';
         colEl.querySelector('.column-name').innerText = item.name;
 
-        // Tính vị trí X mới (dựa trên thứ tự sau khi sắp xếp)
+        // Vị trí X (Centered)
         const xPos = index * step + (step / 2) - 30;
-        const hPx = Math.max(8, Math.floor((item.votes / maxVotes) * 280)); // Tối thiểu 8px để thấy cột
+        
+        // Chiều cao (Đảm bảo tối thiểu 8px để thấy vạch mờ chân cột khi 0 phiếu)
+        const hPx = Math.max(8, Math.floor((item.votes / maxVotes) * 280));
 
-        // Áp dụng hiệu ứng di chuyển ngang
         colEl.style.transform = `translateX(${xPos}px)`;
         
-        // Cập nhật chiều cao và con số sau một khoảng delay nhỏ
         const bar = colEl.querySelector('.column-bar');
         const voteText = colEl.querySelector('.column-votes');
         
+        // Chạy hiệu ứng mọc cột
         setTimeout(() => {
             if(bar) bar.style.height = hPx + "px";
             if(voteText) voteText.innerText = item.votes;
         }, 50);
+    });
+
+    // Xóa các cột rác không còn trong danh sách (nếu có)
+    frame.querySelectorAll('.column-item').forEach(el => {
+        if (!chartData.find(d => `col-opt-${d.realIndex}` === el.id)) el.remove();
     });
 }
 
