@@ -894,6 +894,11 @@ input {
         let userAnswers = {};
 
         async function renderEventPoll() {
+            // KIỂM TRA: Nếu máy này đã hoàn thành Event trước đó
+            if(localStorage.getItem('event_completed')) {
+                document.getElementById('success-overlay').style.display = 'flex';
+                return;
+            }
             document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-user').classList.remove('hidden');
 
@@ -974,21 +979,22 @@ input {
             const poll = userPollsQueue[userCurrentIndex];
             
             try {
-                // 1. Gửi phiếu bầu của câu hiện tại lên Firebase
                 await rdb.ref(`s_votes/polls/${poll.id}/votes`).push(optionIdx);
                 
-                // 2. Hiệu ứng chuyển cảnh mượt mà
                 const optionsContainer = document.getElementById('u-options');
-                const titleEl = document.getElementById('u-title');
-                
                 optionsContainer.style.opacity = '0';
                 optionsContainer.style.transform = 'translateX(-20px)';
                 
-                // 3. Đợi một chút rồi nhảy sang câu tiếp theo
                 setTimeout(() => {
-                    showPollStep(userCurrentIndex + 1);
-                    // Reset lại vị trí để câu sau hiện ra bình thường
-                    optionsContainer.style.transform = 'translateX(0)';
+                    // Nếu đây là câu hỏi cuối cùng trong chuỗi
+                    if (userCurrentIndex === userPollsQueue.length - 1) {
+                        // ĐÁNH DẤU: Máy này đã hoàn thành cả sự kiện (Event)
+                        localStorage.setItem('event_completed', 'true');
+                        finishAllVotes();
+                    } else {
+                        showPollStep(userCurrentIndex + 1);
+                        optionsContainer.style.transform = 'translateX(0)';
+                    }
                 }, 400);
 
             } catch (e) {
@@ -1328,6 +1334,7 @@ function renderBarChart() {
     const counts = new Array(data.options.length).fill(0);
     votes.forEach(v => counts[v]++);
 
+    // 1. Lọc và Sắp xếp
     let chartData = data.options.map((name, index) => ({
         id: `col-opt-${index}`, 
         name: name,
@@ -1340,10 +1347,11 @@ function renderBarChart() {
     container.classList.remove('hidden');
     document.getElementById('empty-state').classList.add('hidden');
 
+    // 2. Khởi tạo khung nếu chưa có
     if (!container.querySelector('.chart-scroll-container')) {
         container.innerHTML = `
-            <div class="chart-scroll-container">
-                <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid rgba(255,255,255,0.3); border-bottom:3px solid rgba(255,255,255,0.3); margin-left:20px; overflow:visible;">
+            <div class="chart-scroll-container" style="width:100%; overflow-x:auto; padding-bottom:100px;">
+                <div class="chart-frame" style="position:relative; height:350px; border-left:3px solid rgba(255,255,255,0.3); border-bottom:3px solid rgba(255,255,255,0.3); margin-left:40px; overflow:visible;">
                     <div class="axis-label-y" style="color:#6366f1; font-weight:800; position:absolute; top:-40px; left:-10px; font-size:11px; font-style:italic; white-space:nowrap;">SỐ PHIẾU ▲</div>
                     <div class="axis-label-x" style="color:#6366f1; font-weight:800; position:absolute; bottom:-60px; right:0; font-size:11px; font-style:italic;">▶ PHƯƠNG ÁN</div>
                 </div>
@@ -1353,27 +1361,21 @@ function renderBarChart() {
     const scrollWin = container.querySelector('.chart-scroll-container');
     const frame = container.querySelector('.chart-frame');
     
-    // --- ĐOẠN FIX TÊN DÀI ---
-    // 1. Tìm độ dài của tên dài nhất (số lượng chữ cái)
-    const maxChars = chartData.length > 0 
-        ? Math.max(...chartData.map(d => d.name.length)) 
-        : 0;
-
-    // 2. Tính toán độ rộng cần thiết cho mỗi cột (Ví dụ: mỗi chữ cái chiếm ~10px + 60px khoảng cách an toàn)
-    // Bạn có thể chỉnh số 60 to hơn nếu muốn đầu tên này cách đuôi tên kia xa hơn
-    const minColWidth = (maxChars * 9) + 60; 
+    // 3. Tính toán độ rộng dựa trên tên dài nhất
+    const maxChars = chartData.length > 0 ? Math.max(...chartData.map(d => d.name.length)) : 0;
+    const minColWidth = Math.max(130, (maxChars * 9) + 40); // Giãn cách dựa trên tên
     
     const itemsCount = chartData.length;
-    const neededWidth = (itemsCount + 1) * minColWidth;
-    const finalWidth = Math.max(scrollWin.clientWidth - 50, neededWidth);
+    const finalWidth = Math.max(scrollWin.clientWidth - 80, itemsCount * minColWidth);
     
     frame.style.width = finalWidth + "px";
-    const step = finalWidth / (itemsCount + 1);
+    const step = finalWidth / (itemsCount || 1);
     const maxVotes = Math.max(...chartData.map(d => d.votes), 1);
-    // ------------------------
 
+    // 4. Ẩn các cột cũ không nằm trong bộ lọc
     frame.querySelectorAll('.column-item').forEach(el => el.style.display = 'none');
 
+    // 5. Vẽ và cập nhật cột
     chartData.forEach((item, index) => {
         let colEl = document.getElementById(item.id);
         
@@ -1384,25 +1386,29 @@ function renderBarChart() {
             colEl.style.cssText = `position:absolute; bottom:0; width:60px; height:350px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1); z-index:10;`;
             
             colEl.innerHTML = `
-                <div class="column-bar" style="width:40px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:0px; transition:height 1.2s cubic-bezier(0.17, 0.67, 0.83, 0.67); position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.4); display:block !important;">
-                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px; text-shadow:0 0 10px rgba(34,211,238,0.5);">0</span>
+                <div class="column-bar" style="width:45px; background:linear-gradient(to top, #3b82f6, #22d3ee); border-radius:8px 8px 0 0; height:5px; transition:height 1s ease; position:relative; box-shadow:0 10px 30px rgba(34, 211, 238, 0.3);">
+                    <span class="column-votes" style="position:absolute; top:-35px; left:50%; transform:translateX(-50%); color:#22d3ee; font-weight:900; font-size:18px;">0</span>
                 </div>
-                <span class="column-name">${item.name}</span>
+                <span class="column-name" style="position:absolute; bottom:-45px; white-space:nowrap; color:white; font-size:12px; font-weight:800; text-transform:uppercase;">${item.name}</span>
             `;
             frame.appendChild(colEl);
         }
 
         colEl.style.display = 'flex';
-        const xPos = (index + 1) * step - 30;
-        const hPx = Math.floor((item.votes / maxVotes) * 280);
+        // Tính vị trí X sao cho cột nằm giữa khoảng chia
+        const xPos = index * step + (step/2) - 30;
+        
+        // FIX: Đảm bảo tối thiểu 5px để 0 phiếu vẫn hiện chân cột mờ mờ cho đẹp
+        const hPx = Math.max(5, Math.floor((item.votes / maxVotes) * 280));
 
         colEl.style.transform = `translateX(${xPos}px)`;
         
+        const bar = colEl.querySelector('.column-bar');
+        const voteText = colEl.querySelector('.column-votes');
+        
         setTimeout(() => {
-            const bar = colEl.querySelector('.column-bar');
-            const voteText = colEl.querySelector('.column-votes');
-            if (bar) bar.style.height = hPx + "px";
-            if (voteText) voteText.innerText = item.votes;
+            if(bar) bar.style.height = hPx + "px";
+            if(voteText) voteText.innerText = item.votes;
         }, 100);
     });
 }
@@ -1413,6 +1419,11 @@ function filterTable() {
 }
 
        async function renderUserPoll(id) {
+            // KIỂM TRA: Nếu máy này đã bầu cho pollId này
+            if(localStorage.getItem('voted_' + id)) {
+                document.getElementById('success-overlay').style.display = 'flex';
+                return;
+            }
             document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-user').classList.remove('hidden');
             const snap = await rdb.ref('s_votes/polls/' + id).once('value');
@@ -1429,28 +1440,27 @@ function filterTable() {
         }
 
         async function submitVote(idx) {
-            // --- TÍNH NĂNG CHẶN (Tạm thời tắt để test) ---
-            /* 
-            if(localStorage.getItem('v_' + currentId)) {
-                S_Notify.alert("Bạn đã bình chọn rồi!", "error");
+            // 1. KIỂM TRA: Nếu máy này đã có dấu vết đã bầu cho pollId này thì chặn
+            if(localStorage.getItem('voted_' + currentId)) {
+                S_Notify.alert("Thiết bị này đã thực hiện bình chọn rồi!", "error");
+                // Tự động hiện màn hình thành công sau 1.5s để người dùng biết họ đã xong
+                setTimeout(() => {
+                    document.getElementById('success-overlay').style.display = 'flex';
+                }, 1500);
                 return;
             }
-            */
 
-            // Tạo hiệu ứng rung nhẹ khi bấm
             if (window.navigator.vibrate) window.navigator.vibrate(50);
 
             try {
                 await rdb.ref(`s_votes/polls/${currentId}/votes`).push(idx);
                 
-                // --- ĐÁNH DẤU ĐÃ BẦU (Tạm thời tắt để test bầu nhiều lần) ---
-                // localStorage.setItem('v_' + currentId, true);
+                // 2. ĐÁNH DẤU: Lưu dấu vết vào máy người dùng
+                localStorage.setItem('voted_' + currentId, 'true');
                 
-                // Hiện overlay thành công
                 const overlay = document.getElementById('success-overlay');
                 overlay.style.display = 'flex';
                 
-                // Bắn pháo hoa
                 confetti({
                     particleCount: 150,
                     spread: 70,
@@ -1464,13 +1474,30 @@ function filterTable() {
         }
 
         function zoomQR() { 
-            if(!lastQR) return S_Notify.alert("Chưa có mã QR để phóng to!", "error");
+            if(!lastQR) return S_Notify.alert("Chưa có mã QR!", "error");
             
+            const overlay = document.getElementById('qr-zoom-overlay');
             const content = document.getElementById('qr-zoom-content');
-            content.innerHTML = `<img src="${lastQR}" class="w-[75vmin] h-[75vmin] object-contain rounded-3xl shadow-[0_0_100px_rgba(255,255,255,0.2)]">`;
             
-            document.getElementById('qr-zoom-overlay').style.display = 'flex';
+            content.innerHTML = `<img src="${lastQR}" class="w-[70vmin] h-[70vmin] object-contain rounded-3xl shadow-[0_0_100px_rgba(255,255,255,0.3)]">`;
+            overlay.style.display = 'flex';
+
+            // KÍCH HOẠT CHẾ ĐỘ TOÀN MÀN HÌNH (F11 Presentation)
+            if (overlay.requestFullscreen) {
+                overlay.requestFullscreen();
+            } else if (overlay.webkitRequestFullscreen) { /* Safari */
+                overlay.webkitRequestFullscreen();
+            } else if (overlay.msRequestFullscreen) { /* IE11 */
+                overlay.msRequestFullscreen();
+            }
         }
+
+        // Thêm sự kiện để khi thoát Fullscreen thì tự đóng lớp phủ luôn
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                document.getElementById('qr-zoom-overlay').style.display = 'none';
+            }
+        });
 
         async function downloadQR() {
             const card = document.getElementById('qr-card-capture');
